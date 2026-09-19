@@ -76,8 +76,11 @@ ros2 run mybot_control line_mask.py --method hsv --v-hi 90 --blur 5 --open 5
 
 1. `/line/mask` 实测约 6.8 Hz（相机 15 Hz × RTF≈0.11，再叠加 Python 逐帧处理）。D10 的 PD 控制环
    要跑在 20 Hz 以上的话，得把处理挪到 C++ 或降分辨率；先记着，别到 D10 才发现。
-2. `--mode tune` 依赖 OpenCV 的 GTK 窗口，同样受 WSLg COPY MODE 影响；看不见窗口时用
-   `--mode compare` 出静态图，或 `rqt_image_view /line/debug`。
+2. **`--mode tune` 在这台机器上看不见窗口**（2026-09-19 实测）：进程不崩、X 服务器里确实建了 640×384 的
+   OpenCV 窗口，但 WSLg 没给它注册 RAIL 窗口，Windows 侧完全看不到。所以 D8 的验收走
+   `--mode compare` 出静态图这条路；要实时看效果就 `rqt_image_view /line/debug`，要调参就改
+   `--v-hi / --gray / --blur / --open` 重跑 compare（一次 20 秒）。tune 代码保留，换到
+   原生 Linux 或修好 WSLg 后可直接用。
 3. 指标里的"连通域"用 8 邻域。线在画面顶部因透视变得极细（1~2 px）时可能被切成多段——
    这是 D9 要用"逐行中心 + 连续性检查"解决的问题，不是 mask 的错。
 
