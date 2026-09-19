@@ -133,6 +133,7 @@ D3 版本保留在 `mybot.urdf.xacro` 与 `gazebo.launch.py` 里，随时可 `ro
 | 圆弧切分 | 15° | 24 段弦 + 4 段直 = 28 个盒子，接缝靠"两端各延长半线宽"重叠 |
 | 黑线 collision | **无** | 只画不碰，3 mm 台阶不会污染驱动轮接触与 `/odom` |
 | 起点 | `(0, -0.9, yaw 0)` | 底部长直道中点，车头朝 +x；旁边 12.5 cm 处有黄色起跑块作视觉参考 |
+| `floor_stain`（D8 加） | 黑线左 18 cm，暗红 0.45/0.05/0.05 | **故意放的干扰色块**：灰度亮度≈44 会被误判成线，HSV 的 V≈110 能排除。用来回答"D8 为什么选 HSV 不选灰度"。生成器 `--no-stain` 可关 |
 
 相机几何（`mybot_core.urdf.xacro` 的 `camera_joint`）：挂点从车壳内 `(0.18, 0, 0.045)` 移到车壳外前方 `(0.21, 0, 0.055)`，离地 **0.154 m**；`camera_pitch` 抽成 xacro arg，巡线取 **+0.6 rad**。
 
@@ -180,6 +181,7 @@ ros2 run mybot_description drive_check.py --speed 0.2 --duration 8 --rate 50    
 | D5 | 激光 360 线 + 摄像头 320×240；world 加障碍；RViz 预设与 `view_sensors.launch.py` |
 | D6 | README + `git init` + tag `v0.1`；D3 遗留 `/set_model_state` 排查 → **Humble API 改名为 `/set_entity_state`** |
 | D7 | 巡线赛道世界（参数化生成器 + 28 段黑线）；相机挂点/俯角修正并参数化；`snap_camera.py` 出图量化验收；`drive_check.py` 无停顿跑通；慢仿真 `cmd_vel_timeout` 对策 |
+| D8 | （视觉部分在姊妹包 [`mybot_control`](../mybot_control/README.md)）本仓库只配合改动：赛道加 `floor_stain` 干扰色块，用于证明灰度阈值会误检 |
 
 ## License
 

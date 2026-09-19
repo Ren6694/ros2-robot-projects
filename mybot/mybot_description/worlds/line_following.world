@@ -261,5 +261,21 @@
       </link>
     </model>
 
+    <!-- D8 干扰色块：故意放在黑线左侧 18 cm、车开不到的地方 -->
+    <model name="floor_stain">
+      <static>true</static>
+      <link name="stain">
+        <visual name="v">
+          <pose>0.60 -0.72 0.0015 0 0 0</pose>
+          <geometry><box><size>0.16 0.12 0.003</size></box></geometry>
+          <material>
+            <lighting>true</lighting>
+            <ambient>0.20 0.02 0.02 1</ambient>
+            <diffuse>0.45 0.05 0.05 1</diffuse>
+            <emissive>0 0 0 1</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>
   </world>
 </sdf>

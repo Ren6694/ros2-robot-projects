@@ -10,3 +10,8 @@
 *.py text
 *.yaml text
 *.rviz text
+
+# 如果哪天进库：.bat 必须 CRLF，否则 cmd 解析会出问题
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.sh  text eol=lf

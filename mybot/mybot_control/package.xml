@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mybot_control</name>
+  <version>0.1.0</version>
+  <description>ROS2 30-day plan P2 D8+: OpenCV line-following vision pipeline (cv_bridge, thresholding, mask metrics)</description>
+  <maintainer email="ren@example.com">ren</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- 视觉链路：话题 <-> OpenCV -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>image_transport</exec_depend>
+  <!-- 与描述包同一台车：话题名 /camera/image_raw、/cmd_vel 由它定义 -->
+  <exec_depend>mybot_description</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -92,10 +92,31 @@ WORLD_TEMPLATE = """<?xml version="1.0"?>
         </visual>
       </link>
     </model>
-
+{stain}
   </world>
 </sdf>
 """
+
+# D8 干扰色块：暗红"地板污渍"。它的灰度亮度约 44（会被 gray<80 误判成线），
+# 但 HSV 的 V = max(R,G,B) 约 110，远大于黑线的 V 约 26，所以 HSV 阈值能排除它。
+# 专门用来回答"D8 为什么最后选 HSV 而不是灰度"这个问题。--no-stain 可关掉。
+STAIN_BLOCK = """
+    <!-- D8 干扰色块：故意放在黑线左侧 18 cm、车开不到的地方 -->
+    <model name="floor_stain">
+      <static>true</static>
+      <link name="stain">
+        <visual name="v">
+          <pose>0.60 -0.72 0.0015 0 0 0</pose>
+          <geometry><box><size>0.16 0.12 0.003</size></box></geometry>
+          <material>
+            <lighting>true</lighting>
+            <ambient>0.20 0.02 0.02 1</ambient>
+            <diffuse>0.45 0.05 0.05 1</diffuse>
+            <emissive>0 0 0 1</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>"""
 
 SEGMENT_TEMPLATE = """        <visual name="seg_{idx:02d}">
           <pose>{cx:.4f} {cy:.4f} {z:.4f} 0 0 {yaw:.6f}</pose>
@@ -163,6 +184,8 @@ def main() -> int:
     ap.add_argument("--out", default="worlds/line_following.world")
     ap.add_argument("--scene", choices=sorted(SCENE_BLOCKS), default="basic",
                     help="写哪种 <scene> 块（二分相机传感器出图问题用）")
+    ap.add_argument("--no-stain", dest="stain", action="store_false", default=True,
+                    help="不放 D8 的暗红干扰色块")
     args = ap.parse_args()
 
     if args.r >= args.b:
@@ -190,7 +213,8 @@ def main() -> int:
     xml = WORLD_TEMPLATE.format(params=params, perimeter=perimeter, nseg=len(segs),
                                 straight_n=len(segs) - arc_n, arc_n=arc_n,
                                 segments="\n".join(segs), y_start=-(args.b + pad_offset_y),
-                                pad_offset_y=pad_offset_y, scene=SCENE_BLOCKS[args.scene])
+                                pad_offset_y=pad_offset_y, scene=SCENE_BLOCKS[args.scene],
+                                stain=STAIN_BLOCK if args.stain else '')
 
     out = os.path.abspath(args.out)
     os.makedirs(os.path.dirname(out), exist_ok=True)
