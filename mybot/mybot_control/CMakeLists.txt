@@ -13,6 +13,8 @@ install(PROGRAMS
   scripts/line_mask.py
   scripts/line_features_node.py
   scripts/test_line_features.py
+  scripts/line_follow_pd.py
+  scripts/test_pd_line.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
