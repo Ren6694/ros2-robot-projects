@@ -1,0 +1,108 @@
+<?xml version="1.0"?>
+<!-- D5: 传感器——激光雷达 + 摄像头。
+     被经典外壳 (mybot.urdf.xacro) 与 ros2_control 外壳 (mybot.ros2c.urdf.xacro) 共用：
+     传感器与差速驱动方案解耦，ros2_control 只接管关节命令，传感器依旧用 gazebo_ros_pkgs。
+     验收：/scan 有 LaserScan (5Hz)、/camera/image_raw 有 Image、RViz 中可视化障碍物。 -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ============ 光学科学生产坐标约定：x=右, y=下, z=前（REP-103） ============ -->
+  <link name="camera_link_optical"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_link_optical"/>
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+
+  <!-- ============ 2D 激光雷达 (laser_link 挂点：xyz=0.10 0 0.035) ============ -->
+  <gazebo reference="laser_link">
+    <material>Gazebo/Black</material>
+    <sensor type="ray" name="mybot_lidar">
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>false</visualize>
+      <update_rate>5</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>${-pi}</min_angle>
+            <max_angle>${pi}</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>8.0</max>
+          <resolution>0.015</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </ray>
+      <!-- gazebo_ros_ray_sensor 在 Humble 直接以 LaserScan 消息发布，无需额外转换节点 -->
+      <plugin name="gazebo_ros_lidar" filename="libgazebo_ros_ray_sensor.so">
+        <ros>
+          <remapping>~/out:=/scan</remapping>
+        </ros>
+        <output_type>sensor_msgs/LaserScan</output_type>
+        <frame_name>laser_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ============ 摄像头 (camera_link 挂点：xyz=0.18 0 0.045) ============ -->
+  <gazebo reference="camera_link">
+    <material>Gazebo/DarkGrey</material>
+    <sensor type="camera" name="mybot_camera">
+      <update_rate>15.0</update_rate>
+      <camera name="head">
+        <horizontal_fov>1.2</horizontal_fov>
+        <image>
+          <width>320</width>
+          <height>240</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.03</near>
+          <far>10.0</far>
+        </clip>
+      </camera>
+      <plugin name="gazebo_ros_camera" filename="libgazebo_ros_camera.so">
+        <!-- 未 remap 时话题默认 /mybot_cam/{image_raw,camera_info}；remap 到 /camera/* 便于 rviz2 与后续 OpenCV 订阅。 -->
+        <ros>
+          <remapping>mybot_cam/image_raw:=/camera/image_raw</remapping>
+          <remapping>mybot_cam/camera_info:=/camera/camera_info</remapping>
+        </ros>
+        <camera_name>mybot_cam</camera_name>
+        <frame_name>camera_link_optical</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- 让 URDF 层有一小块可见体积，方便 RViz 里确认挂载点（不影响 Gazebo 物理，无 collision） -->
+  <link name="laser_link_visual">
+    <visual>
+      <geometry><cylinder radius="0.02" length="0.02"/></geometry>
+      <material name="lidar_black"><color rgba="0.1 0.1 0.1 1"/></material>
+    </visual>
+  </link>
+  <joint name="laser_visual_joint" type="fixed">
+    <parent link="laser_link"/>
+    <child link="laser_link_visual"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="camera_link_visual">
+    <visual>
+      <geometry><box size="0.02 0.06 0.02"/></geometry>
+      <material name="cam_grey"><color rgba="0.4 0.4 0.4 1"/></material>
+    </visual>
+  </link>
+  <joint name="camera_visual_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_link_visual"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+</robot>

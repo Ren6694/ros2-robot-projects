@@ -1,0 +1,165 @@
+<?xml version="1.0"?>
+<!-- D2: xacro 参数化版本
+     改动（相对 D1 的 mybot.urdf）：
+     1) 全部尺寸抽成 property，改一处全模型联动
+     2) 轮子用 macro 生成，左右只差 y_sign
+     3) 新增前端 caster 万向球（fixed joint），三点支撑
+     4) 补齐 inertial 惯性矩阵（D3 进 Gazebo 物理仿真的前置条件）
+     5) 预留 laser_link / camera_link 挂载点（D5 传感器插件直接复用） -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="mybot">
+
+  <!-- ============ 参数表 ============ -->
+  <xacro:property name="chassis_length"   value="0.40"/>
+  <xacro:property name="chassis_width"    value="0.26"/>
+  <xacro:property name="chassis_height"   value="0.06"/>
+  <xacro:property name="chassis_mass"     value="1.0"/>
+
+  <xacro:property name="wheel_radius"     value="0.035"/>
+  <xacro:property name="wheel_width"      value="0.02"/>
+  <xacro:property name="wheel_mass"       value="0.05"/>
+  <xacro:property name="wheel_separation" value="0.28"/>   <!-- 左右轮心距 -->
+  <xacro:property name="wheel_x_offset"   value="0.10"/>   <!-- 驱动轴在质心后方 -->
+  <xacro:property name="wheel_clearance"  value="0.001"/>  <!-- 轮顶与车底留 1mm，防共面 -->
+
+  <xacro:property name="caster_radius"    value="0.03"/>
+  <xacro:property name="caster_mass"      value="0.02"/>
+  <xacro:property name="caster_x_offset"  value="0.14"/>
+
+  <!-- 派生高度：轮心 -> 地面线 -> 球心，全部由参数推导出，不再手填魔数 -->
+  <xacro:property name="wheel_z"  value="${-(chassis_height/2 + wheel_radius) + wheel_clearance}"/>
+  <xacro:property name="ground_z" value="${wheel_z - wheel_radius}"/>
+  <xacro:property name="caster_z" value="${ground_z + caster_radius}"/>
+
+  <!-- ============ 材质 ============ -->
+  <material name="body_blue"><color rgba="0.20 0.40 0.90 1.0"/></material>
+  <material name="tyre_grey"><color rgba="0.15 0.15 0.15 1.0"/></material>
+  <material name="caster_grey"><color rgba="0.55 0.55 0.55 1.0"/></material>
+
+  <!-- ============ 惯性宏 ============ -->
+  <xacro:macro name="inertial_box" params="mass x y z">
+    <inertial>
+      <origin xyz="0 0 0"/>
+      <mass value="${mass}"/>
+      <inertia ixx="${mass/12.0*(y*y+z*z)}" ixy="0.0" ixz="0.0"
+               iyy="${mass/12.0*(x*x+z*z)}" iyz="0.0"
+               izz="${mass/12.0*(x*x+y*y)}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- 圆柱惯性在本地系（轴向 z），随 link 的 visual/collision origin 一起旋转 -->
+  <xacro:macro name="inertial_cylinder" params="mass radius length">
+    <inertial>
+      <origin xyz="0 0 0"/>
+      <mass value="${mass}"/>
+      <inertia ixx="${mass/12.0*(3*radius*radius+length*length)}" ixy="0.0" ixz="0.0"
+               iyy="${mass/12.0*(3*radius*radius+length*length)}" iyz="0.0"
+               izz="${mass/2.0*radius*radius}"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="inertial_sphere" params="mass radius">
+    <inertial>
+      <origin xyz="0 0 0"/>
+      <mass value="${mass}"/>
+      <inertia ixx="${2.0/5.0*mass*radius*radius}" ixy="0.0" ixz="0.0"
+               iyy="${2.0/5.0*mass*radius*radius}" iyz="0.0"
+               izz="${2.0/5.0*mass*radius*radius}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- ============ 车体 ============ -->
+  <link name="base_link">
+    <visual>
+      <geometry><box size="${chassis_length} ${chassis_width} ${chassis_height}"/></geometry>
+      <material name="body_blue"/>
+    </visual>
+    <collision>
+      <geometry><box size="${chassis_length} ${chassis_width} ${chassis_height}"/></geometry>
+    </collision>
+    <xacro:inertial_box mass="${chassis_mass}" x="${chassis_length}" y="${chassis_width}" z="${chassis_height}"/>
+  </link>
+
+  <!-- ============ 车轮宏 ============ -->
+  <!-- 圆柱默认轴向 z，绕 x 转 90° 后轴朝 y（即车宽方向），与 joint axis (0 1 0) 匹配 -->
+  <xacro:macro name="wheel" params="prefix y_sign">
+    <link name="wheel_${prefix}_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+        <material name="tyre_grey"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+      </collision>
+      <xacro:inertial_cylinder mass="${wheel_mass}" radius="${wheel_radius}" length="${wheel_width}"/>
+    </link>
+
+    <joint name="wheel_${prefix}_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="wheel_${prefix}_link"/>
+      <origin xyz="${-wheel_x_offset} ${y_sign*wheel_separation/2} ${wheel_z}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:wheel prefix="left"  y_sign="${1}"/>
+  <xacro:wheel prefix="right" y_sign="${-1}"/>
+
+  <!-- ============ 前端 caster 万向球 ============ -->
+  <link name="caster_link">
+    <visual>
+      <geometry><sphere radius="${caster_radius}"/></geometry>
+      <material name="caster_grey"/>
+    </visual>
+    <collision>
+      <geometry><sphere radius="${caster_radius}"/></geometry>
+    </collision>
+    <xacro:inertial_sphere mass="${caster_mass}" radius="${caster_radius}"/>
+  </link>
+
+  <joint name="caster_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="caster_link"/>
+    <origin xyz="${caster_x_offset} 0 ${caster_z}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ============ 传感器挂载点（D5 占位） ============ -->
+  <link name="laser_link"/>
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_link"/>
+    <origin xyz="0.10 0 0.035" rpy="0 0 0"/>
+  </joint>
+
+  <link name="camera_link"/>
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="0.18 0 0.045" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ============ Gazebo 物理与差速驱动插件（D3） ============ -->
+  <!-- 材质与摩擦：驱动轮高摩擦抓地，caster 近零摩擦模拟万向轮 -->
+  <gazebo reference="base_link">
+    <material>Gazebo/Blue</material>
+  </gazebo>
+  <gazebo reference="wheel_left_link">
+    <material>Gazebo/FlatBlack</material>
+    <mu1>1.5</mu1><mu2>1.5</mu2>
+    <kp>1000000.0</kp><kd>100.0</kd>
+    <minDepth>0.001</minDepth>
+  </gazebo>
+  <gazebo reference="wheel_right_link">
+    <material>Gazebo/FlatBlack</material>
+    <mu1>1.5</mu1><mu2>1.5</mu2>
+    <kp>1000000.0</kp><kd>100.0</kd>
+    <minDepth>0.001</minDepth>
+  </gazebo>
+  <gazebo reference="caster_link">
+    <material>Gazebo/Grey</material>
+    <mu1>0.001</mu1><mu2>0.001</mu2>
+  </gazebo>
+
+
+</robot>

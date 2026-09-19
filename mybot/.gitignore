@@ -1,0 +1,24 @@
+# Build artifacts (colcon)
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ROS 2
+.deps/
+*.log
+
+# Worktrees (SDD helpers)
+.worktrees/

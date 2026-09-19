@@ -1,0 +1,28 @@
+# D4: ros2_control 控制器配置（gazebo_ros2_control 插件经 <parameters> 读入）
+# 注意：wheel_separation / wheel_radius 与 mybot_core.urdf.xacro 的参数保持一致
+controller_manager:
+  ros__parameters:
+    update_rate: 50          # 与经典插件 update_rate 对齐
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    diff_drive_controller:
+      type: diff_drive_controller/DiffDriveController
+
+diff_drive_controller:
+  ros__parameters:
+    left_wheel_names: ["wheel_left_joint"]
+    right_wheel_names: ["wheel_right_joint"]
+    wheel_separation: 0.28
+    wheel_radius: 0.035
+    odom_frame_id: odom
+    base_frame_id: base_link
+    use_stamped_vel: false             # ★ 新版默认 true 订阅 TwistStamped；关掉才对齐 teleop/Nav2 的 Twist /cmd_vel
+    enable_odom_tf: true               # odom->base TF 由本控制器发布（经典插件是 publish_odom_tf）
+    publish_rate: 50.0
+    cmd_vel_timeout: 0.5               # ★ D3 缺陷的修复点：0.5s 收不到指令自动清零
+    pose_covariance_diagonal: [0.001, 0.001, 0.001, 0.001, 0.001, 0.01]
+    twist_covariance_diagonal: [0.001, 0.001, 0.001, 0.001, 0.001, 0.01]
+    linear.x.has_velocity_limits: true
+    linear.x.max_velocity: 1.0
+    angular.z.has_velocity_limits: true
+    angular.z.max_velocity: 2.0

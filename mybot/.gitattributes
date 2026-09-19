@@ -1,0 +1,12 @@
+# Normalize line endings: repo stores LF; checkout on Windows won't force CRLF on code.
+* text=auto eol=lf
+
+# Explicitly mark binary-ish files
+*.png binary
+*.jpg binary
+*.urdf text
+*.xacro text
+*.world text
+*.py text
+*.yaml text
+*.rviz text

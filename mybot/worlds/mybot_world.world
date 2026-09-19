@@ -1,0 +1,78 @@
+<?xml version="1.0"?>
+<!-- D3→D5: 最小测试世界。D5 加了 3 个前方障碍物 + 一堵侧墙，用于验证激光/相机能"看见"。
+     物理参数：1kHz 步长、real_time_factor=1。WSL2 下 RTF 常 <1，属环境限制不影响功能验收。 -->
+<sdf version="1.6">
+  <world name="mybot_world">
+
+    <include><uri>model://ground_plane</uri></include>
+    <include><uri>model://sun</uri></include>
+
+    <physics type="ode">
+      <real_time_update_rate>1000.0</real_time_update_rate>
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+    </physics>
+
+    <!-- ROS 世界接口（D6 排查结论）：
+         ① ROS1 的 gazebo_ros_api_plugin 在 Humble 被拆成三块，本机 .so 名字分别是
+            libgazebo_ros_factory.so（/spawn_entity，由 gzserver -s 加载）、
+            libgazebo_ros_state.so（**新 API**：/gazebo/get_entity_state + /gazebo/set_entity_state，
+                不再是 get/set_model_state；也 publish /gazebo/model_states、/gazebo/link_states topic）、
+            libgazebo_ros_properties.so（/gazebo/get_light_properties、/pause_physics、/unpause_physics 等）。
+         ② 之前"世界里的 api_plugin 未注册 /set_model_state"的根因就是这个 .so 不存在 + 服务改名。
+         ③ 复位 mybot 用：ros2 service call /gazebo/set_entity_state gazebo_msgs/srv/SetEntityState
+              "{name: 'mybot', type: 'model', pose: {position: {x:0,y:0,z:0.035}, orientation: {w:1}}}" -->
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
+      <ros><namespace>/gazebo</namespace></ros>
+    </plugin>
+    <plugin name="gazebo_ros_properties" filename="libgazebo_ros_properties.so">
+      <ros><namespace>/gazebo</namespace></ros>
+    </plugin>
+
+    <!-- ============ D5 障碍物（供激光/相机可视化验证） ============ -->
+    <model name="box_ahead">
+      <static>true</static>
+      <pose>1.5 0 0.15 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.3 0.3 0.3</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.3 0.3 0.3</size></box></geometry>
+          <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Red</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="box_left">
+      <static>true</static>
+      <pose>1.0 0.8 0.15 0 0 0.6</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.3 0.3 0.3</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.3 0.3 0.3</size></box></geometry>
+          <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Green</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="box_right">
+      <static>true</static>
+      <pose>1.0 -0.8 0.15 0 0 -0.6</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.3 0.3 0.3</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.3 0.3 0.3</size></box></geometry>
+          <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Blue</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_front">
+      <static>true</static>
+      <pose>2.8 0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.1 4.0 1.0</size></box></geometry></collision>
+        <visual name="v"><geometry><box><size>0.1 4.0 1.0</size></box></geometry>
+          <material><script><uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Wood</name></script></material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

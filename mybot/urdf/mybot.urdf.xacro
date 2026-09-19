@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<!-- D3 外壳：核心模型 + 经典 gazebo_ros diff_drive 插件（保持 D3 行为不变） -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="mybot">
+
+  <xacro:include filename="$(find mybot_description)/urdf/mybot_core.urdf.xacro"/>
+
+  <!-- 经典 diff_drive 插件：订阅 /cmd_vel -> 轮速；发布 /odom、/joint_states 与 odom->base TF。
+       已知缺陷（D3 实测）：publisher 消失后保持最后速度，无 command timeout -->
+  <gazebo>
+    <plugin name="diff_drive_controller" filename="libgazebo_ros_diff_drive.so">
+      <update_rate>50</update_rate>
+      <left_joint>wheel_left_joint</left_joint>
+      <right_joint>wheel_right_joint</right_joint>
+      <wheel_separation>${wheel_separation}</wheel_separation>
+      <wheel_diameter>${2*wheel_radius}</wheel_diameter>
+      <max_wheel_torque>2.0</max_wheel_torque>
+      <max_wheel_acceleration>1.0</max_wheel_acceleration>
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <publish_wheel_tf>false</publish_wheel_tf>
+      <publish_joints>joint_states</publish_joints>
+      <odometry_frame>odom</odometry_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+    </plugin>
+  </gazebo>
+
+</robot>

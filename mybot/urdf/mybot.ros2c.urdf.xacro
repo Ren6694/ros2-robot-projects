@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<!-- D4 外壳：核心模型 + ros2_control 硬件接口 + gazebo_ros2_control 插件。
+     与经典插件的区别：控制逻辑在 controller_manager 内（与真机同一套 ros2_control 栈），
+     diff_drive_controller 自带 cmd_vel_timeout —— 修掉 D3 的"保持最后速度"缺陷 -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="mybot">
+
+  <xacro:arg name="ros2c_params_file"
+             default="$(find mybot_description)/config/mybot_controllers.yaml"/>
+
+  <xacro:include filename="$(find mybot_description)/urdf/mybot_core.urdf.xacro"/>
+  <!-- D5: 传感器（激光/相机）与硬件抽象层解耦，两种驱动外壳都 include 同一份 -->
+  <xacro:include filename="$(find mybot_description)/urdf/mybot_sensors.urdf.xacro"/>
+
+  <!-- ros2_control 声明：GazeboSystem 硬件读关节状态 / 写轮速指令 -->
+  <ros2_control name="GazeboSystem" type="system">
+    <hardware>
+      <plugin>gazebo_ros2_control/GazeboSystem</plugin>
+    </hardware>
+    <joint name="wheel_left_joint">
+      <command_interface name="velocity">
+        <param name="min">-10</param>
+        <param name="max">10</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="wheel_right_joint">
+      <command_interface name="velocity">
+        <param name="min">-10</param>
+        <param name="max">10</param>
+      </command_interface>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+  <gazebo>
+    <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
+      <parameters>$(arg ros2c_params_file)</parameters>
+      <controller_manager_name>controller_manager</controller_manager_name>
+      <ros>
+        <!-- use_stamped_vel:=false 时控制器的 Twist 输入口实际叫 cmd_vel_unstamped（D4 实测），
+             重映射到 /cmd_vel 对齐 teleop/Nav2 约定 -->
+        <remapping>/diff_drive_controller/cmd_vel_unstamped:=/cmd_vel</remapping>
+        <remapping>/diff_drive_controller/odom:=/odom</remapping>
+      </ros>
+    </plugin>
+  </gazebo>
+
+</robot>

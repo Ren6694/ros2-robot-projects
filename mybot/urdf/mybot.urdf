@@ -1,0 +1,78 @@
+<?xml version="1.0"?>
+<!-- D1: 最小三连杆差速车 —— 车体 + 左右驱动轮（xacro 参数化与惯性包在 D2 补） -->
+<robot name="mybot">
+
+  <material name="body_blue">
+    <color rgba="0.20 0.40 0.90 1.0"/>
+  </material>
+  <material name="tyre_grey">
+    <color rgba="0.15 0.15 0.15 1.0"/>
+  </material>
+
+  <!-- ================= 车体 base_link ================= -->
+  <!-- 坐标约定：x 向前，z 向上；车体几何中心置于原点，轮轴在下方 -->
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="0.40 0.26 0.06"/>
+      </geometry>
+      <material name="body_blue"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.40 0.26 0.06"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- ================= 左轮 ================= -->
+  <!-- 轮半径 0.035 m、宽 0.02 m；圆柱默认轴向为 z，故 visual 绕 x 转 -90° 使轮面朝 y -->
+  <link name="wheel_left_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="-1.5707963 0 0"/>
+      <geometry>
+        <cylinder radius="0.035" length="0.02"/>
+      </geometry>
+      <material name="tyre_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="-1.5707963 0 0"/>
+      <geometry>
+        <cylinder radius="0.035" length="0.02"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="wheel_left_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="wheel_left_link"/>
+    <!-- 后 axle（x=-0.10），轮心贴车体外侧：y = 车半宽0.13 + 胎半宽0.01 -->
+    <origin xyz="-0.10 0.14 -0.035" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- ================= 右轮 ================= -->
+  <link name="wheel_right_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="-1.5707963 0 0"/>
+      <geometry>
+        <cylinder radius="0.035" length="0.02"/>
+      </geometry>
+      <material name="tyre_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="-1.5707963 0 0"/>
+      <geometry>
+        <cylinder radius="0.035" length="0.02"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="wheel_right_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="wheel_right_link"/>
+    <origin xyz="-0.10 -0.14 -0.035" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+  </joint>
+
+</robot>
