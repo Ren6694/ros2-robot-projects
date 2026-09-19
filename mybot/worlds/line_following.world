@@ -1,0 +1,265 @@
+<?xml version="1.0"?>
+<!-- 由 scripts/make_line_world.py 生成，请勿手改；改赛道改参数重跑生成器。
+     参数：half_straight=1.2 half_width=0.9 corner_radius=0.45 line_width=0.05 line_thickness=0.003 arc_step_deg=15
+     几何：环线 9.42 m，28 段黑线（直道 4 + 圆弧 24） -->
+<sdf version="1.6">
+  <world name="line_following">
+
+    <physics type="ode">
+      <real_time_update_rate>1000.0</real_time_update_rate>
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+    </physics>
+
+    <!-- 地面：Gazebo/Grey（diffuse 0.7）+ 摩擦 mu=100/mu2=50，比自建平面抓地更好，
+         与黑线 FlatBlack（0.1）形成 7:1 亮度对比，D8 阈值分割余量充足 -->
+    <include><uri>model://ground_plane</uri></include>
+    <include><uri>model://sun</uri></include>
+
+    <!-- 关掉阴影与地面网格：WSL2 上 RTF 只有 ~0.16，省渲染；
+         网格是 gzclient 叠在地面上的半透明线，会进相机画面，给 D8 添噪声
+         （注意：SDF 1.6 的 <scene> 不认 <grid>，实测该元素被忽略，见 --no-scene 二分记录）
+    <scene>
+      <ambient>0.5 0.5 0.5 1</ambient>
+      <shadows>false</shadows>
+      <grid>
+        <enabled>false</enabled>
+      </grid>
+    </scene>
+     -->
+    <scene>
+      <ambient>0.5 0.5 0.5 1</ambient>
+      <shadows>false</shadows>
+    </scene>
+
+    <!-- ROS 世界接口（D6 结论：Humble 已把 gazebo_ros_api_plugin 拆成三块）
+         libgazebo_ros_factory.so 由 gzserver -s 加载（/spawn_entity）；
+         下面两个挂在 world 里：state -> /gazebo/{get,set}_entity_state，
+         properties -> /pause_physics、/unpause_physics、/gazebo/{get,set}_light_properties -->
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
+      <ros><namespace>/gazebo</namespace></ros>
+    </plugin>
+    <plugin name="gazebo_ros_properties" filename="libgazebo_ros_properties.so">
+      <ros><namespace>/gazebo</namespace></ros>
+    </plugin>
+
+    <!-- ============ 巡线黑线：一个 static model、一个 link、28 个 visual ============ -->
+    <model name="line_track">
+      <static>true</static>
+      <link name="line">
+        <visual name="seg_00">
+          <pose>0.0000 -0.9000 0.0015 0 0 0.000000</pose>
+          <geometry><box><size>2.4500 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_01">
+          <pose>1.2582 -0.8923 0.0015 0 0 0.130900</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_02">
+          <pose>1.3707 -0.8622 0.0015 0 0 0.392699</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_03">
+          <pose>1.4716 -0.8040 0.0015 0 0 0.654498</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_04">
+          <pose>1.5540 -0.7216 0.0015 0 0 0.916298</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_05">
+          <pose>1.6122 -0.6207 0.0015 0 0 1.178097</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_06">
+          <pose>1.6423 -0.5082 0.0015 0 0 1.439897</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_07">
+          <pose>1.6500 0.0000 0.0015 0 0 1.570796</pose>
+          <geometry><box><size>0.9500 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_08">
+          <pose>1.6423 0.5082 0.0015 0 0 1.701696</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_09">
+          <pose>1.6122 0.6207 0.0015 0 0 1.963495</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_10">
+          <pose>1.5540 0.7216 0.0015 0 0 2.225295</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_11">
+          <pose>1.4716 0.8040 0.0015 0 0 2.487094</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_12">
+          <pose>1.3707 0.8622 0.0015 0 0 2.748894</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_13">
+          <pose>1.2582 0.8923 0.0015 0 0 3.010693</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_14">
+          <pose>0.0000 0.9000 0.0015 0 0 3.141593</pose>
+          <geometry><box><size>2.4500 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_15">
+          <pose>-1.2582 0.8923 0.0015 0 0 -3.010693</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_16">
+          <pose>-1.3707 0.8622 0.0015 0 0 -2.748894</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_17">
+          <pose>-1.4716 0.8040 0.0015 0 0 -2.487094</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_18">
+          <pose>-1.5540 0.7216 0.0015 0 0 -2.225295</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_19">
+          <pose>-1.6122 0.6207 0.0015 0 0 -1.963495</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_20">
+          <pose>-1.6423 0.5082 0.0015 0 0 -1.701696</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_21">
+          <pose>-1.6500 0.0000 0.0015 0 0 -1.570796</pose>
+          <geometry><box><size>0.9500 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_22">
+          <pose>-1.6423 -0.5082 0.0015 0 0 -1.439897</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_23">
+          <pose>-1.6122 -0.6207 0.0015 0 0 -1.178097</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_24">
+          <pose>-1.5540 -0.7216 0.0015 0 0 -0.916298</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_25">
+          <pose>-1.4716 -0.8040 0.0015 0 0 -0.654498</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_26">
+          <pose>-1.3707 -0.8622 0.0015 0 0 -0.392699</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+        <visual name="seg_27">
+          <pose>-1.2582 -0.8923 0.0015 0 0 -0.130900</pose>
+          <geometry><box><size>0.1675 0.050 0.0030</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
+          </script></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 起跑参考块（黄色，中心在黑线外侧 0.125 m，即 y=-1.025，
+         与黑线不相连：D9 做线中心提取时它不会被当成线的一部分） -->
+    <model name="start_pad">
+      <static>true</static>
+      <link name="pad">
+        <visual name="v">
+          <pose>0.0 -1.025 0.0015 0 0 0</pose>
+          <geometry><box><size>0.03 0.16 0.003</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Yellow</name>
+          </script></material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

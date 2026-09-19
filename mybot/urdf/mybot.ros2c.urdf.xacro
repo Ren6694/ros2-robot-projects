@@ -6,6 +6,10 @@
 
   <xacro:arg name="ros2c_params_file"
              default="$(find mybot_description)/config/mybot_controllers.yaml"/>
+  <!-- D7：第二个参数文件，只用于覆盖个别键（gazebo_ros2_control 读多个 <parameters> 标签，
+       后者覆盖前者）。默认与主文件相同 = 不覆盖，保持 D4 验收口径；
+       巡线 launch 传 config/mybot_controllers_slowsim.yaml 放宽 cmd_vel_timeout。 -->
+  <xacro:arg name="extra_params_file" default="$(arg ros2c_params_file)"/>
 
   <xacro:include filename="$(find mybot_description)/urdf/mybot_core.urdf.xacro"/>
   <!-- D5: 传感器（激光/相机）与硬件抽象层解耦，两种驱动外壳都 include 同一份 -->
@@ -36,7 +40,10 @@
 
   <gazebo>
     <plugin name="gazebo_ros2_control" filename="libgazebo_ros2_control.so">
+      <!-- 多个参数文件 = 多个 <parameters> 标签（实测写成空格分隔的单个标签会被当成一个路径，
+           报 "Error opening YAML file"）；后一个标签里的键覆盖前一个 -->
       <parameters>$(arg ros2c_params_file)</parameters>
+      <parameters>$(arg extra_params_file)</parameters>
       <controller_manager_name>controller_manager</controller_manager_name>
       <ros>
         <!-- use_stamped_vel:=false 时控制器的 Twist 输入口实际叫 cmd_vel_unstamped（D4 实测），

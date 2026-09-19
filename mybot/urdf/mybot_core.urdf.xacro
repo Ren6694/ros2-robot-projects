@@ -133,10 +133,24 @@
   </joint>
 
   <link name="camera_link"/>
+  <!-- D7 修正：原挂点 xyz="0.18 0 0.045" 落在车体壳内（底盘半长 0.20、顶面 z=0.03），
+       相机往下看会先撞到自家顶板，巡线时前景全是蓝色车壳。
+       现移到车体外前方：x=0.21（前壁外 1 cm）、z=0.055（顶面上方 2.5 cm），
+       距地高度 = 0.099(底盘中心离地) + 0.055 = 0.154 m。
+       pitch 抽成 arg：默认 0.0 保持 D5 的话题/TF 验收口径不变，
+       巡线 launch 传 +0.6 rad（约 +34°）。**符号注意**：URDF 绕 y 轴正角 = 低头
+       （+x 转向 −z），写成 -0.6 会变成抬头看天，画面就是一张 Gazebo 天空色（178）的纯色图。
+       为什么是 0.6：
+       hfov=1.2 rad、320x240 → vfov/2 = atan(tan(0.6)*240/320) = 0.474 rad，
+       pitch 必须大于 0.474（低头）整幅画面才全部落在地面上；0.6 时
+       最近可见点 0.154/tan(61.5°)=0.084 m、最远 0.154/tan(7.2°)=1.22 m（均在车前） -->
+  <xacro:property name="camera_x" value="0.21"/>
+  <xacro:property name="camera_z" value="0.055"/>
+  <xacro:arg name="camera_pitch" default="0.0"/>
   <joint name="camera_joint" type="fixed">
     <parent link="base_link"/>
     <child link="camera_link"/>
-    <origin xyz="0.18 0 0.045" rpy="0 0 0"/>
+    <origin xyz="${camera_x} 0 ${camera_z}" rpy="0 $(arg camera_pitch) 0"/>
   </joint>
 
   <!-- ============ Gazebo 物理与差速驱动插件（D3） ============ -->
