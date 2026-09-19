@@ -1,18 +1,24 @@
 # D7：慢仿真专用覆盖参数（只覆盖需要覆盖的键，其余仍以 mybot_controllers.yaml 为准）
 #
 # 为什么需要它：
-#   cmd_vel_timeout 的单位是**仿真时间**。WSL2 上 gzserver 的 RTF 只有 0.11~0.22，
-#   0.5 s 仿真时间 = 2.3~4.5 s 墙上时间；而 DDS 在负载下是**成簇投递**的，
-#   一簇消息被 sim time 打时间戳时，最早那条的"年龄"会瞬间超过 0.5 s，
-#   diff_drive_controller 按设计把命令清零 → 车每隔几秒自己停一下。
-#   实测：发布频率从 10 Hz 提到 200 Hz 都不能消除停顿，证明瓶颈不在发布频率。
+#   cmd_vel_timeout 的单位是**仿真时间**。开着 gzclient + rqt_image_view 时本机实测
+#   RTF ≈ 0.15（headless 时接近 1），也就是墙上 1 秒只推进 0.15 秒仿真；
+#   再叠加 DDS 在负载下的成簇投递，0.5 s 的默认值会被打穿，
+#   表现为**车每隔几秒自己顿一下**（v_x 掉到 0 又回到指令值）。
+#   实测：把发布频率从 10 Hz 提到 200 Hz 消除不了停顿 → 瓶颈不在发布端。
 #
-# 真机（P3 之后的 ESP32）上 RTF≈1，必须回到 mybot_controllers.yaml 的 0.5 s，
-# 那是安全超时，不能为了"跑得顺"而放宽。
+# 为什么是 2.0 而不是 5.0（D9 收尾时下调）：
+#   5.0 时松手后车还会跑 5 s 仿真 ≈ 1 m，遥控场景不可接受。
+#   2.0 s 实测：0.2 m/s 下松手最多再滑 0.4 m，且 drive_check 连续 8 秒无顿挫。
+#   **真机（P3 之后的 ESP32）必须回 mybot_controllers.yaml 的 0.5 s** ——
+#   那是安全超时，不能为了"跑得顺"而放宽。
 #
-# 用法：line_follow.launch.py 默认把它作为 extra_params_file 传给 gazebo_ros2_control；
-# 想恢复 D4 的 0.5 s 行为：
-#   ros2 launch mybot_description line_follow.launch.py extra_params_file:=<.../mybot_controllers.yaml>
+# 用法：line_follow.launch.py 默认把它作为第二个 <parameters> 传给 gazebo_ros2_control。
+# 恢复 D4 的 0.5 s 行为：
+#   ros2 launch mybot_description line_follow.launch.py \
+#        extra_params_file:=<.../config/mybot_controllers.yaml>
+# 运行中临时改（不重启，验证用）：
+#   ros2 param set /diff_drive_controller cmd_vel_timeout 2.0
 diff_drive_controller:
   ros__parameters:
-    cmd_vel_timeout: 5.0     # 仿真时间，≈ 45 s 墙上时间，足够跨过任何一次投递突发
+    cmd_vel_timeout: 2.0     # 仿真时间；0.2 m/s 下松手最多再滑 0.4 m
