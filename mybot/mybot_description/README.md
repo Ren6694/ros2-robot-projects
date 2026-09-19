@@ -160,11 +160,12 @@ ros2 run mybot_description drive_check.py --speed 0.2 --duration 8 --rate 50    
 
 ## 已知限制
 
-1. **WSL2 上 Gazebo RTF 通常 ~0.16**（2.5 s 实际位移 0.12 m，理论 0.75 m）。这是 GPU/驱动限制，不影响控制逻辑；D4 停车实验只看 `pose` 是否冻结即可。
+1. **RTF 是个要现量、不能照抄的数**（见下面第 5 条的 09-19 晚重测）。本包早期在 D4 停车实验里读到过 ≈0.16（2.5 s 只走了 0.12 m），当时判断为"GPU/驱动限制"；后来确认那类低值多来自**残留多个 gzserver 的污染测量**或空转负载。控制逻辑本身与 RTF 无关，D4 停车实验只看 `pose` 是否冻结即可。
 2. **`libgazebo_ros_api_plugin.so` 在 Humble 已不存在**。世界文件里的 `/gazebo/set_model_state` 走的是**新 API `/gazebo/set_entity_state`**（消息类型 `SetEntityState`，字段 `name + type` 取代 `model_name`）。旧资料如按 ROS1 名字调用会拿到 `!rclpy.ok()` 或 `Fault` 类错误。
 3. **`pkill` 自杀陷阱**：清理 ROS 进程时命令本身不能包含与目标进程命令行重叠的裸字面量。所有 `pgrep/pkill` 一律用括号正则，如 `pkill -9 "[g]zserver"`。参考：本包所有测试脚本都遵守此约定。
 4. **ROS_DOMAIN_ID / SHM 铁律**：`~/maze_ws` 项目沿用 `ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=1 RMW_FASTRTPS_SHM_PROVIDER=0`；本包在任意域下都能跑，但复用同一台机器上的 maze_ws 时请保持域一致。
-5. **慢仿真的隐藏杀手：`cmd_vel_timeout` 按仿真时间计时**（D7 实测，D9 收尾量化）。**RTF 分档实测**：只跑 gzserver ≈ **1**（相机 15 Hz 就出 14.95 Hz、`/odom` 50 Hz）；**加上 gzclient + rqt_image_view 后掉到 ≈ 0.15**。0.5 s 仿真超时在 0.15 RTF 下 = 墙上 3.3 s，DDS 成簇投递一叠加就把命令判成过期 → 车每隔几秒自顿一次。把发布频率从 10 Hz 提到 200 Hz **不能**解决（瓶颈不在发布端）。对策：`config/mybot_controllers_slowsim.yaml` 覆盖 `cmd_vel_timeout: 2.0`，由 `line_follow.launch.py` 作为第二个 `<parameters>` 传入。**为什么不是 5.0**：5.0 时松手后车还会跑约 1 m，遥控场景不安全；2.0 实测最多再滑 0.4 m 且无顿挫。**真机（P3 之后）必须回 0.5 s，那是安全超时。**
+5. **慢仿真的隐藏杀手：`cmd_vel_timeout` 按仿真时间计时**（D7 实测，D9 收尾量化，**D10 晚重测推翻了原来的 RTF 数值**）。0.5 s 仿真超时在低 RTF 下会被拉成几秒墙上时间，DDS 成簇投递一叠加就把最早那条命令判成过期 → 车每隔几秒自顿一次；把发布频率从 10 Hz 提到 200 Hz **不能**解决（瓶颈不在发布端）。对策：`config/mybot_controllers_slowsim.yaml` 覆盖 `cmd_vel_timeout: 2.0`，由 `line_follow.launch.py` 作为第二个 `<parameters>` 传入。**为什么不是 5.0**：5.0 时松手后车还会跑约 1 m，遥控场景不安全；2.0 实测最多再滑 0.4 m 且无顿挫。**真机（P3 之后）必须回 0.5 s，那是安全超时。**
+   **RTF 不要照抄常数**：本包曾记录"只跑 gzserver ≈ 1、开 gzclient + rqt 掉到 ≈ 0.15"，09-19 晚用 `/clock` 时间差重测发现**开 GUI 那个数不可复现**——车跑动时 gzclient + rqt 全开实测 **RTF = 1.00**（15 s 窗口，`/clock` 满 10 Hz），空转时读到 0.53。原来的 0.15 是在残留多个 gzserver 的污染状态下测的。所以**每次实验前先量**：`python3 scripts/rtf_probe.py 15`（`ros2 topic hz /clock` 只能给发布频率，读不出 RTF；订阅 `/clock` 必须用 BEST_EFFORT QoS，否则一条都收不到、看起来像仿真没起）。
 6. **`gazebo_ros2_control` 的多参数文件写法**：要**多个 `<parameters>` 标签**（后者覆盖前者）。写成空格分隔的单个标签会被当成**一个**路径，报 `Error opening YAML file`，且 gzserver 仍会起来、只有控制器加载失败，容易误判。
 7. **URDF 绕 y 轴正角 = 低头**（x 前 / y 左 / z 上的右手系里 `+y` 旋转把 `+x` 推向 `−z`）。相机俯角写成 `-0.6` 实际是抬头看天，而 Gazebo 天空背景色是 `0.7,0.7,0.7` = **178**，于是 `/camera/image_raw` 出一张 **std 严格为 0** 的纯色图 —— 极易误判成"WSL2 传感器渲染坏了"。快速判别法：`camera_pitch:=0.0` 跑一次，能看见地面就说明世界与传感器都好，问题在姿态符号。
 8. **WSLg COPY MODE**：Qt/GL 类窗口（gzclient、rqt、RViz）可能落进 `[WARN:COPY MODE] <标题>`——X 服务器里画面完全正常（`DISPLAY=:0 import -window <Xid> out.png` 可直接抓出来），但 Windows 侧不重绘。处置见上文"启动顺序"；必要时 `wsl --shutdown` 重来。纯 X11 小程序（xeyes）不受影响，所以"xeyes 能显示"不代表 GUI 已修好。

@@ -15,6 +15,7 @@ install(PROGRAMS
   scripts/make_line_world.py
   scripts/snap_camera.py
   scripts/drive_check.py
+  scripts/rtf_probe.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
