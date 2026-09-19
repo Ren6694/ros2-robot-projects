@@ -103,8 +103,59 @@ ros2 run mybot_control line_mask.py --method hsv --v-hi 90 --blur 5 --open 5
 2. 指标里的"连通域"用 8 邻域。线在画面顶部因透视变得极细（1~2 px）时可能被切成多段——
    这是 D9 要用"逐行中心 + 连续性检查"解决的问题，不是 mask 的错。
 
+## D9：米制线特征 `/line/pose`
+
+把画面变成**米和弧度**（不是像素），D10 的 PD 直接可用。
+
+```
+/camera/image_raw + /camera/camera_info
+   → masking.make_mask(FEATURE)            # hsv + 高斯，不做开运算
+   → line_features.row_centers             # 逐行最长连续段中心；歧义行/贴边行丢弃
+   → CamGeom.pixel_to_ground               # 逆透视：像素 -> 地面米
+   → fit_line_ransac (tol=8mm)             # 全局鲁棒直线拟合 + 内点精修
+   → /line/pose (PoseStamped)  /line/centers(可视化)  /line/mask
+```
+
+定义与符号：`y = b·x + a`（x 前向、y 左侧，车体系）→ **θ = atan(b)**、
+**e = a + b·x_ref**（`x_ref` 默认取最近可用行，**不外推到车轴**；要轴上值用 `e_at(0.0)`）。
+`e>0` = 线在车左 → `cmd_vel.angular.z` 取正。
+
+为什么 e 不外推到 x=0：画面最近只能看到 x≈0.29 m，外推等于把斜率误差乘 0.3~0.5 灌进 e，
+实测 12° 夹角时单这一项就贡献 **68 mm 假偏差**。
+
+### 验证（两条独立路径）
+
+**解析真值单元测试** `ros2 run mybot_control test_line_features.py` —— 给定
+`y = e0 + tan(θ0)·x` 用相机模型画成图，再反解比对，覆盖居中/横偏/夹角/干扰块/断线/
+"线出画面必须拒绝输出"/投影闭环，**12/12 通过**，端到端用例 e 差 4 mm、θ 差 1.5°。
+
+**实机交叉验证**（Gazebo 真实渲染，带污渍带夹角）：
+
+| 车位姿（`set_entity_state`） | 真值 | 节点实测 | 误差 |
+|---|---|---|---|
+| (0,−0.90) yaw 0 正对 | e=0 | −0.35 mm / θ +0.2° | 亚毫米 |
+| (0,−0.95) yaw 0 横移 5 cm | +5.00 cm | +5.1 cm @x=0.29，内点 170/170 | 1 mm |
+| (0,−0.95) yaw −10° | +11.4 cm / +10.1° | +11.5 cm @x=0.36 / +10.1°，内点 104/104 | 1 mm / 0.0° |
+
+细节与**两次错误归因的记录**（先怪开运算、再用顺序门控，都被单变量对照推翻，
+最终解法是 RANSAC）见 `workspace\projects\机器人与仿真\20260919-ROS2学习笔记\D9-线中心提取与偏差.md`。
+
+### 给 D10 的用法
+
+```python
+from mybot_control.line_features import CamGeom, extract
+from mybot_control.masking import FEATURE, make_mask
+geom = CamGeom.from_camera_info(info_msg, cam_x=0.21, cam_h=0.154, pitch=0.6)
+lf = extract(make_mask(img, **FEATURE), geom)
+if lf.ok:
+    e, theta = lf.e, lf.theta
+```
+节点在**没有有效线特征时不发布**（不是发上一次的值），这样 D10 的看门狗能区分
+"线在正中"和"线丢了"。
+
 ## 里程碑
 
 | Day | 交付 |
 |---|---|
 | D8 | cv_bridge 管线 + 灰度/高斯/HSV/开运算四组对照实验，选定 `hsv+blur+open` 基线；`/line/mask`、`/line/debug` 发布；四项质量指标 |
+| D9 | `line_features.py` 逆透视出**米制 e 与 θ** + RANSAC 鲁棒拟合；解析真值单元测试 12/12；实机三组位姿交叉验证误差 ≤1 mm；`/line/pose`(PoseStamped) 与 `/line/centers` |

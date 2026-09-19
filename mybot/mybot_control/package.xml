@@ -8,12 +8,15 @@
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <!-- 视觉链路：话题 <-> OpenCV -->
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>cv_bridge</exec_depend>
   <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
   <exec_depend>image_transport</exec_depend>
   <!-- 与描述包同一台车：话题名 /camera/image_raw、/cmd_vel 由它定义 -->
   <exec_depend>mybot_description</exec_depend>

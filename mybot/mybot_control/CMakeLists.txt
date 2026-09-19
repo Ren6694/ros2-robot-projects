@@ -2,11 +2,17 @@ cmake_minimum_required(VERSION 3.8)
 project(mybot_control)
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 
-# D8 只有 Python 节点；脚本走 lib/${PROJECT_NAME} 才能 ros2 run。
-# launch/ 与 config/ 等 D9/D10 有了内容再补 install（空目录 git 也不跟踪）。
+# D9：算法放进可导入的 Python 包，脚本只做 CLI/节点外壳。
+# 这样单元测试（test_line_features.py）能直接 import mybot_control.line_features，
+# 不用为了复用代码去 sys.path 里翻 scripts/，也不用把同一份算法抄两遍。
+ament_python_install_package(${PROJECT_NAME})
+
 install(PROGRAMS
   scripts/line_mask.py
+  scripts/line_features_node.py
+  scripts/test_line_features.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
