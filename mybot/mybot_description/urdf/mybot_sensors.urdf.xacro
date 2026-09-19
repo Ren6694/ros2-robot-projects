@@ -51,11 +51,15 @@
     </sensor>
   </gazebo>
 
-  <!-- ============ 摄像头 (camera_link 挂点：xyz=0.18 0 0.045) ============ -->
+  <!-- ============ 摄像头 (camera_link 挂点：xyz=0.21 0 0.055，D7 起) ============ -->
+  <!-- D8：update_rate 抽成 arg。注意 Gazebo 的传感器限频是按**仿真时间**算的，
+       所以墙上实测频率 = update_rate × RTF；RTF 0.5 时 15Hz 只出 7.5 张/秒。
+       默认 15.0 保持 D5/D7 口径，慢仿真下要提帧率就 camera_rate:=30 起步。 -->
+  <xacro:arg name="camera_rate" default="15.0"/>
   <gazebo reference="camera_link">
     <material>Gazebo/DarkGrey</material>
     <sensor type="camera" name="mybot_camera">
-      <update_rate>15.0</update_rate>
+      <update_rate>$(arg camera_rate)</update_rate>
       <camera name="head">
         <horizontal_fov>1.2</horizontal_fov>
         <image>

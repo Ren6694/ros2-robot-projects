@@ -38,6 +38,8 @@ def generate_launch_description():
     args = [
         DeclareLaunchArgument('camera_pitch', default_value='0.6',
                               description='相机俯仰角(rad)，正值向下（URDF 绕 y 右手法则）'),
+        DeclareLaunchArgument('camera_rate', default_value='15.0',
+                              description='相机 update_rate(Hz，按仿真时间)。墙上频率=本值×RTF'),
         DeclareLaunchArgument('extra_params_file', default_value=slowsim,
                               description='第二个控制器参数文件；填 mybot_controllers.yaml 可恢复 0.5s 超时'),
         DeclareLaunchArgument('gui', default_value='true', description='是否启动 gzclient'),
@@ -63,7 +65,8 @@ def generate_launch_description():
             Command(['xacro ', xacro,
                      ' ros2c_params_file:=', controllers,
                      ' extra_params_file:=', LaunchConfiguration('extra_params_file'),
-                     ' camera_pitch:=', LaunchConfiguration('camera_pitch')]),
+                     ' camera_pitch:=', LaunchConfiguration('camera_pitch'),
+                     ' camera_rate:=', LaunchConfiguration('camera_rate')]),
             value_type=str)}],
         output='screen',
     )

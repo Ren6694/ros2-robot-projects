@@ -72,16 +72,35 @@ ros2 run mybot_control line_mask.py --method hsv --v-hi 90 --blur 5 --open 5
 工作台里也有一个 `跑D8阈值实验.bat`，双击即跑第 1 条并把图拷到
 `scratch\d8\`。
 
+## 实测频率（2026-09-19 复测，更正先前"6.8 Hz、需要换 C++"的错误结论）
+
+先说结论：**Python 不是瓶颈，20 Hz 的 PD 环现在就能跑**。之前那个 6.8 Hz 是**测量污染**。
+
+| 项 | 实测 | 说明 |
+|---|---|---|
+| `make_mask` + `measure` 单帧耗时 | **0.40 ms**（hsv+blur5+open3，320×240） | 单核理论上限 ≈2500 Hz，换 C++ 毫无收益 |
+| `camera_rate:=15` | 14.95 Hz，抖动 2.7 ms | 单 server、`/robot_description` 已核对 |
+| `camera_rate:=60` | 59.93 Hz，抖动 1.5 ms | 同上 |
+| `camera_rate:=30` | **59.93 Hz**（URDF 里确实写着 30） | 这个档位**不线性**，30 会掉到渲染帧率 |
+| 加 gzclient | 仍 59.96 Hz | 客户端渲染不吃传感器带宽 |
+| `/line/mask` | 与相机同频（59.76 Hz） | 管线不引入额外降频 |
+
+给 D10 的设定：**`camera_rate:=30` 起步（实测约 60 Hz），控制环 20 Hz、看门狗按仿真时间算**。
+`update_rate` 这个旋钮在本机不单调，所以**别拿它当保证**，用 `ros2 topic hz` 实测。
+
+**为什么先前会量出 5.3~8.7 Hz**：工作台脚本的判活函数用了 `pgrep -f "[g]zserv"`，
+它会漏报 → `do_start` 以为没在跑、跳过 `do_stop` → 攒出 2~3 个 gzserver 同时发 `/camera/image_raw`，
+频率既会叠加（15 被读成 60）也会因抢占而抖动（读到 5~8）。已改成 `pgrep -x gzserver` 精确匹配。
+**教训：测频率之前先 `pgrep -xc gzserver` 数清楚有几个 server**，否则任何数字都没意义。
+
 ## 已知限制
 
-1. `/line/mask` 实测约 6.8 Hz（相机 15 Hz × RTF≈0.11，再叠加 Python 逐帧处理）。D10 的 PD 控制环
-   要跑在 20 Hz 以上的话，得把处理挪到 C++ 或降分辨率；先记着，别到 D10 才发现。
-2. **`--mode tune` 在这台机器上看不见窗口**（2026-09-19 实测）：进程不崩、X 服务器里确实建了 640×384 的
+1. **`--mode tune` 在这台机器上看不见窗口**（2026-09-19 实测）：进程不崩、X 服务器里确实建了 640×384 的
    OpenCV 窗口，但 WSLg 没给它注册 RAIL 窗口，Windows 侧完全看不到。所以 D8 的验收走
    `--mode compare` 出静态图这条路；要实时看效果就 `rqt_image_view /line/debug`，要调参就改
    `--v-hi / --gray / --blur / --open` 重跑 compare（一次 20 秒）。tune 代码保留，换到
    原生 Linux 或修好 WSLg 后可直接用。
-3. 指标里的"连通域"用 8 邻域。线在画面顶部因透视变得极细（1~2 px）时可能被切成多段——
+2. 指标里的"连通域"用 8 邻域。线在画面顶部因透视变得极细（1~2 px）时可能被切成多段——
    这是 D9 要用"逐行中心 + 连续性检查"解决的问题，不是 mask 的错。
 
 ## 里程碑
