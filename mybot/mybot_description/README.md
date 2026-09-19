@@ -36,6 +36,7 @@ mybot_description/
 ├── worlds/
 │   ├── mybot_world.world             # 空世界 + 3 障碍 + 1 前墙（D5 起）
 │   └── line_following.world          # D7：9.42 m 巡线环线（生成物，勿手改）
+│   └── line_following_obstacle.world # D11：同一条赛道 + 一个障碍（供避障验收；基线文件未变）
 ├── CMakeLists.txt                    # ament_cmake，install 上述目录 + scripts 可执行
 └── package.xml
 ```
@@ -134,6 +135,7 @@ D3 版本保留在 `mybot.urdf.xacro` 与 `gazebo.launch.py` 里，随时可 `ro
 | 黑线 collision | **无** | 只画不碰，3 mm 台阶不会污染驱动轮接触与 `/odom` |
 | 起点 | `(0, -0.9, yaw 0)` | 底部长直道中点，车头朝 +x；旁边 12.5 cm 处有黄色起跑块作视觉参考 |
 | `floor_stain`（D8 加） | 黑线左 18 cm，暗红 0.45/0.05/0.05 | **故意放的干扰色块**：灰度亮度≈44 会被误判成线，HSV 的 V≈110 能排除。用来回答"D8 为什么选 HSV 不选灰度"。生成器 `--no-stain` 可关 |
+| `obstacle_NN`（D11 加，仅 `line_following_obstacle.world`） | 默认 (0.8, −0.9)，0.12×0.12×**0.22** m，Gazebo/Blue | 避障靶。**三条硬约束**：① 必须带 `<collision>`（ray sensor 打 collision，黑线是故意不带的）；② **高度必须 > 0.134 m**——激光射线世界高度 = 底盘离地 0.099 + laser_link 上移 0.035，第一版给 0.12 m 结果射线从头顶过去、`/scan` 完全扫不到；③ 亮色，深色会污染 D8/D9 阈值分割。生成器对②做**硬拦**（`SystemExit`）。名字 `obstacle_NN` 是为了能 `ros2 service call /delete_entity gazebo_msgs/srv/DeleteEntity "{name: obstacle_00}"` 运行时移开（注意字段是 `name` 不是 `model_name`） |
 
 相机几何（`mybot_core.urdf.xacro` 的 `camera_joint`）：挂点从车壳内 `(0.18, 0, 0.045)` 移到车壳外前方 `(0.21, 0, 0.055)`，离地 **0.154 m**；`camera_pitch` 抽成 xacro arg，巡线取 **+0.6 rad**。
 

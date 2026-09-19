@@ -15,6 +15,8 @@ install(PROGRAMS
   scripts/test_line_features.py
   scripts/line_follow_pd.py
   scripts/test_pd_line.py
+  scripts/line_follow_avoid.py
+  scripts/test_avoid.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -20,6 +20,10 @@
 
 用法（Windows 侧改，再 cp 进 WSL 构建）：
   python scripts/make_line_world.py --out worlds/line_following.world
+  # D11 避障版：障碍压在底部长直道上（车起点 (0,-0.9) 朝 +x，0.8 m 处一个方块）
+  python scripts/make_line_world.py --out worlds/line_following_obstacle.world \
+      --obstacle 0.8,-0.9
+  # 基线与避障版分成两个文件，是为了让 D10 的回归数字随时可复现。
 """
 from __future__ import annotations
 
@@ -92,7 +96,7 @@ WORLD_TEMPLATE = """<?xml version="1.0"?>
         </visual>
       </link>
     </model>
-{stain}
+{stain}{obstacles}
   </world>
 </sdf>
 """
@@ -125,6 +129,35 @@ SEGMENT_TEMPLATE = """        <visual name="seg_{idx:02d}">
             <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/FlatBlack</name>
           </script></material>
         </visual>"""
+
+# D11 障碍物。和黑线相反，它**必须带 <collision>**，两个理由缺一不可：
+#   1) Gazebo 的 ray sensor 打的是 collision 几何，没有 collision 的物体在 /scan 里是隐形的；
+#   2) 要能真的把车挡住，才能验证"停住"不是只靠软件刹车。
+# ★ 高度必须超过激光所在高度，否则水平射线从头顶过去、/scan 完全扫不到。
+#   实测几何：底盘中心离地 0.099 m（spawn z=0.10），laser_link 在 base_link 上 z=+0.035
+#   => 激光射线在 world z ≈ 0.134 m。相机同理在 0.154 m（与 D9 的 cam_h 常数一致）。
+#   所以默认给 0.22 m 高（0.00~0.22，上下都留余量），0.12 m 的方块是**扫不到的**——踩过。
+# 颜色用 Gazebo/Blue（亮色）而不是深色：深色会和黑线混在一起，污染 D8/D9 的阈值分割。
+# 名字 obstacle_NN 是有意的 —— 运行时可以用 /gazebo/delete_entity 按名字删掉，
+# 这样"障碍移开后车自己恢复巡线"这一半验收就不用重启仿真。
+LASER_WORLD_Z = 0.134   # 激光射线的世界高度，见上面推导
+
+OBSTACLE_TEMPLATE = """    <!-- D11 障碍 {idx}：压在黑线上（靠近时会完全遮住线 -> 逼出丢线恢复行为） -->
+    <model name="obstacle_{idx:02d}">
+      <static>true</static>
+      <pose>{x:.3f} {y:.3f} {zc:.3f} 0 0 {yaw:.3f}</pose>
+      <link name="body">
+        <visual name="v">
+          <geometry><box><size>{sx:.3f} {sy:.3f} {sz:.3f}</size></box></geometry>
+          <material><script>
+            <uri>file://media/materials/scripts/gazebo.material</uri><name>Gazebo/Blue</name>
+          </script></material>
+        </visual>
+        <collision name="c">
+          <geometry><box><size>{sx:.3f} {sy:.3f} {sz:.3f}</size></box></geometry>
+        </collision>
+      </link>
+    </model>"""
 
 # --scene 三档，用于二分"相机传感器出图全灰"这个问题：
 #   none  : 完全不写 <scene>，与 D5 的 mybot_world.world 保持一致（已验证传感器能出图）
@@ -172,6 +205,8 @@ def build_centerline(a: float, b: float, r: float, arc_step_deg: int):
 def main() -> int:
     try:  # Windows 控制台默认 cp936，重定向时中文 print 会炸；统一按 UTF-8 输出
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        # raise SystemExit("中文") 走的是 stderr，只转 stdout 的话报错信息照样乱码
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
     ap = argparse.ArgumentParser(description="生成巡线赛道 .world")
@@ -186,6 +221,11 @@ def main() -> int:
                     help="写哪种 <scene> 块（二分相机传感器出图问题用）")
     ap.add_argument("--no-stain", dest="stain", action="store_false", default=True,
                     help="不放 D8 的暗红干扰色块")
+    ap.add_argument("--obstacle", action="append", default=[], metavar="X,Y[,YAW_DEG]",
+                    help="放一个 D11 障碍物，坐标可重复给多个。例：--obstacle 0.8,-0.9")
+    ap.add_argument("--obstacle-size", default="0.12,0.12,0.22", metavar="SX,SY,SZ",
+                    dest="osz",
+                    help="障碍物尺寸；高度必须 > 激光高度 0.134，默认 0.22 m")
     args = ap.parse_args()
 
     if args.r >= args.b:
@@ -210,11 +250,42 @@ def main() -> int:
               f"line_width={args.w} line_thickness={args.thk} arc_step_deg={args.step}")
 
     pad_offset_y = args.w / 2 + 0.10          # 黑线半宽 + 10 cm 间隙
+
+    # ---- D11 障碍物 ----
+    # 尺寸必须跨过激光高度，否则 /scan 扫不到，状态机就成了"看不见障碍的瞎避障"。
+    # 这条不是提醒而是硬拦：0.12 m 高的方块我们实测扫不到，白跑一轮。
+    sx, sy, sz = (float(v) for v in args.osz.split(","))
+    if sz <= LASER_WORLD_Z:
+        raise SystemExit(
+            f"障碍高度 {sz} m 不够：激光射线在 world z≈{LASER_WORLD_Z} m（底盘离地 0.099 + "
+            f"laser_link 上移 0.035），水平射线会从头顶过去，/scan 完全看不见它。"
+            f"给个 > {LASER_WORLD_Z:.3f} 的值，默认 0.22。")
+    obs_blocks, obs_list = [], []
+    for i, spec in enumerate(args.obstacle):
+        parts = [float(v) for v in spec.split(",")]
+        if len(parts) == 2:
+            ox, oy, oyaw = parts[0], parts[1], 0.0
+        elif len(parts) == 3:
+            ox, oy, oyaw = parts
+        else:
+            raise SystemExit(f"--obstacle 要的是 X,Y[,YAW_DEG]，收到：{spec}")
+        # 落在赛道包围盒外 = 车永远碰不到，白放；这比放错位置更隐蔽，所以直接拦下来
+        lim_x, lim_y = args.a + args.r + 0.25, args.b + 0.25
+        if abs(ox) > lim_x or abs(oy) > lim_y:
+            raise SystemExit(f"障碍 ({ox},{oy}) 在赛道包围盒 ±({lim_x:.2f},{lim_y:.2f}) 之外，车碰不到")
+        obs_list.append((ox, oy, oyaw))
+        obs_blocks.append(OBSTACLE_TEMPLATE.format(
+            idx=i, x=ox, y=oy, zc=sz / 2.0, sx=sx, sy=sy, sz=sz, yaw=math.radians(oyaw)))
+    # 每个障碍块自带前导换行，这样"一个都没有"时展开成空串，
+    # 生成的 .world 与加障碍功能之前逐字节相同（D10 基线可复现）。
+    obstacles = "".join("\n" + b for b in obs_blocks)
+
     xml = WORLD_TEMPLATE.format(params=params, perimeter=perimeter, nseg=len(segs),
                                 straight_n=len(segs) - arc_n, arc_n=arc_n,
                                 segments="\n".join(segs), y_start=-(args.b + pad_offset_y),
                                 pad_offset_y=pad_offset_y, scene=SCENE_BLOCKS[args.scene],
-                                stain=STAIN_BLOCK if args.stain else '')
+                                stain=STAIN_BLOCK if args.stain else '',
+                                obstacles=obstacles)
 
     out = os.path.abspath(args.out)
     os.makedirs(os.path.dirname(out), exist_ok=True)
@@ -226,6 +297,12 @@ def main() -> int:
     print(f"外轮廓    : {2 * (args.a + args.r):.2f} x {2 * args.b:.2f} m")
     print(f"线宽/厚度 : {args.w * 1000:.0f} mm / {args.thk * 1000:.0f} mm")
     print(f"起点位姿  : x=0 y={-args.b} yaw=0（底部长直道中点，车头朝 +x）")
+    if obs_list:
+        print(f"D11 障碍  : {len(obs_list)} 个，尺寸 {sx:.2f}x{sy:.2f}x{sz:.2f} m，中心 z={sz/2:.3f}")
+        for i, (ox, oy, oyaw) in enumerate(obs_list):
+            print(f"  obstacle_{i:02d} @ ({ox:+.2f}, {oy:+.2f}) yaw={oyaw:+.0f}°")
+    else:
+        print("D11 障碍  : 无（要避障版加 --obstacle X,Y，输出到另一个 .world 以免动到 D10 基线）")
     print(f"已写出    : {out}")
     return 0
 

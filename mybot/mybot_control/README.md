@@ -201,6 +201,89 @@ v_max=0.30  墙上 35 s  里程 8.36 m  圈数 1
 0.5 m/s 那次是**安全地失败**（停住而非乱跑），但停车后不会自己找线——D11 的状态机
 要补"丢线→倒车/原地找线"的恢复行为，正好把 `/scan` 避障一起接上。
 
+## D11：避障状态机 —— 巡线与避障共存
+
+```
+/line/pose (PoseStamped) ┐
+                         ├→ avoid.AvoidFSM.step() → /cmd_vel (Twist)
+/scan (LaserScan)        ┘                        → /avoid/state (String)
+```
+
+**控制律一行没改**（还是 D10 的 `pd_line.compute`），这一层只在外面套了"什么时候允许动、
+往哪儿动"的仲裁。状态逻辑全在 `mybot_control/avoid.py`（纯函数、不 import rclpy），
+节点 `scripts/line_follow_avoid.py` 只做 ROS 胶水 —— 因为状态机是全项目最容易
+"看起来对、实际会撞"的一层，必须能在毫秒级被喂进任意病态传感器序列并断言输出。
+
+### 状态与优先级
+
+```
+front <= stop_dist(0.30)      -> OBSTACLE_STOP   v=0 w=0
+stop < front <= warn(0.55)    -> DECEL           速度按比例压，转向原样保留
+线丢了 且 前方干净             -> SEARCH          原地找线，1.5s 反向，6s 超时
+线丢了 且 前方不干净           -> OBSTACLE_STOP   ★ 不许在障碍跟前转身找线
+搜索超时                      -> SAFE_STOP       吸收态，等人接管
+其余                          -> FOLLOW
+```
+
+★ **必须先判障碍、再判丢线**。D11 的真实场景就是"方块挡住黑线"：相机看不见线、激光看得见
+方块。若先判丢线，车会进 SEARCH 原地旋转，把正对着它的障碍当成"线丢了"处理，转着转着就撞上。
+
+### `/scan` 的两条实测构成（决定了参数，不是拍脑袋）
+
+- **自我回波**：一帧 360 线里有 32 条落在 0.123~0.307 m，角度**全部 \|θ\| ≥ 98°**（车壳与轮子）。
+  按"全向最近值"判障碍会让车永远认为贴着障碍、一步不走 → 前向扇区取 **±25°**。
+- **盲区** `range_min=0.12`：比它更近的读数一律丢弃，否则一个假回波会让车永久停死。
+- **避障的分辨率上限是 `/scan` 的 5 Hz，不是控制环的 20 Hz**：0.30 m/s 下每帧激光之间车前进
+  6 cm，所有距离门限按这个数留余量（`test_avoid.py` 第 [5] 组把这条写成断言）。
+
+### 迟滞（防阈值抖振）
+
+车停在障碍前时激光噪声让前向距离在 0.278~0.300 m 之间摆（极差 23 mm），正好压在 0.300 门限上，
+首轮 200 秒出现 3 次 `OBSTACLE_STOP ↔ DECEL` 来回跳。→ 脱出 OBSTACLE_STOP 要求
+`front > stop_dist + release_margin(0.10)`。单测直接喂 ±11 mm 实测噪声 200 帧断言**零次翻转**，
+并保留"障碍又逼近仍判停"的用例（迟滞不牺牲安全）。
+
+### 失效安全：激光断流 = 停车，不是"前方干净"
+
+"没数据"和"没障碍"在数据上长得一模一样。节点里 `/scan` 超过 `--scan-timeout`(1 s) 没更新
+就返回哨兵距离 0.0 → 走 OBSTACLE_STOP。首轮数据里确实抓到一次相机+激光同时断 1.16 秒，
+行为是"停 1.2 秒 → 传感器恢复 → 自己继续跑完"，而不是闭眼往前开。
+
+### 用法
+
+```bash
+# 带障碍的世界（世界文件由生成器产出，见 mybot_description）
+ros2 launch mybot_description line_follow.launch.py \
+    world:=<share>/worlds/line_following_obstacle.world gui:=false image_view:=false
+ros2 run mybot_control line_features_node.py
+ros2 run mybot_control line_follow_avoid.py --csv /tmp/d11.csv
+ros2 run mybot_control test_avoid.py            # 不需要开仿真
+
+# 运行时移开障碍（验证"恢复"那半段，不用重启仿真）
+ros2 service call /delete_entity gazebo_msgs/srv/DeleteEntity "{name: obstacle_00}"
+```
+
+### D11 验收（一键 `跑D11避障.bat`）
+
+```
+/line/pose 14.986 Hz → 车驶向障碍 → 1.2s DECEL → 3.4s OBSTACLE_STOP（零速、最近 0.296 m）
+→ 运行时删障碍 success=True → 6.2s 恢复 FOLLOW → 40s 跑完一圈
+状态帧数 FOLLOW 661(83.8%) / OBSTACLE_STOP 84(10.6%) / DECEL 44(5.6%)
+|e| 均值 1.2 cm / 最大 4.6 cm（与 D10 的 1.3 cm 同量级 → 避障没牺牲巡线）
+<0.20 m 的帧 = 0；轨迹 x −1.52~+1.72、y 0~1.83、积分路径 8.35 m、终点距起点 0.34 m（闭合）
+```
+
+数字由 `scripts/analyze_avoid_log.py` **从 CSV 独立复算**，不采信节点自己的汇总
+（第一版 summary 就因为多插一列 `state` 导致索引错位而崩过）。
+
+⚠ 统计口径教训：全帧 `|e|` 算出来 0.2 cm 好得可疑——85% 的帧是"停在障碍前没动、e≈0"
+把均值稀释了。只统计 FOLLOW 帧才是真数。**凡是"加了个状态机之后精度暴涨"，先怀疑口径。**
+
+### 遗留
+
+不会绕行（挡住就等，绕行走 P4/Nav2）；SEARCH 只在前方干净时允许，被完全堵死不会自己绕开
+——有意的安全取舍；长会话偶发传感器断流未查根因，已被失效安全兜住。
+
 ## 里程碑
 
 | Day | 交付 |
@@ -208,3 +291,4 @@ v_max=0.30  墙上 35 s  里程 8.36 m  圈数 1
 | D8 | cv_bridge 管线 + 灰度/高斯/HSV/开运算四组对照实验，选定 `hsv+blur+open` 基线；`/line/mask`、`/line/debug` 发布；四项质量指标 |
 | D9 | `line_features.py` 逆透视出**米制 e 与 θ** + RANSAC 鲁棒拟合；解析真值单元测试 12/12；实机三组位姿交叉验证误差 ≤1 mm；`/line/pose`(PoseStamped) 与 `/line/centers` |
 | D10 | `pd_line.py` 控制律 + `line_follow_pd.py` 节点（20 Hz 定时、丢线看门狗、自动判圈）；**0.30 m/s 35 秒跑完整圈**，\|e\| 均值 1.3 cm；速度扫描定出稳定上限 0.35~0.50；`test_pd_line.py` 含参数自洽性检查 |
+| D11 | `avoid.py` 避障状态机（FOLLOW/DECEL/OBSTACLE_STOP/SEARCH/SAFE_STOP，含迟滞与激光断流失效安全）+ `line_follow_avoid.py` 节点 + `analyze_avoid_log.py` 独立复算；**障碍前停死 29.6 cm → 运行时删障 → 自己恢复并跑完一圈**，\|e\| 1.2 cm（与 D10 同级）；`test_avoid.py` 含 4 条★安全性质与实测噪声零翻转断言 |

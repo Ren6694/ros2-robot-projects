@@ -26,7 +26,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     pkg = get_package_share_directory('mybot_description')
-    world = os.path.join(pkg, 'worlds', 'line_following.world')
+    default_world = os.path.join(pkg, 'worlds', 'line_following.world')
     xacro = os.path.join(pkg, 'urdf', 'mybot.ros2c.urdf.xacro')
     controllers = os.path.join(pkg, 'config', 'mybot_controllers.yaml')
     slowsim = os.path.join(pkg, 'config', 'mybot_controllers_slowsim.yaml')
@@ -48,10 +48,14 @@ def generate_launch_description():
         DeclareLaunchArgument('x', default_value='0.0'),
         DeclareLaunchArgument('y', default_value='-0.9'),
         DeclareLaunchArgument('yaw', default_value='0.0'),
+        # D11：world 以前是写死的，导致"换个赛道做实验"必须改源码。开成参数后
+        # 避障版可以这样起：world:=<.../line_following_obstacle.world>
+        DeclareLaunchArgument('world', default_value=default_world,
+                              description='.world 绝对路径（D11 避障版用 line_following_obstacle.world）'),
     ]
 
     gzserver = ExecuteProcess(
-        cmd=['gzserver', '--verbose-sdf', world,
+        cmd=['gzserver', '--verbose-sdf', LaunchConfiguration('world'),
              '-s', 'libgazebo_ros_init.so', '-s', 'libgazebo_ros_factory.so'],
         output='screen',
     )
