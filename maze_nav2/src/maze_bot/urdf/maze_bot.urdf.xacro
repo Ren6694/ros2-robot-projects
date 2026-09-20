@@ -1,0 +1,363 @@
+<?xml version="1.0"?>
+<!--
+  迷宫仿真小车 —— 差速驱动 + 2D 激光雷达
+  由 maze_bot_gen.py 生成，参数见生成脚本头部
+
+  TF 树:
+    odom -> base_footprint -> base_link -> laser_frame
+                                        -> wheel_left_link
+                                        -> wheel_right_link
+
+  尺寸: 车体直径 0.220m  雷达高度 0.220m
+  走廊净宽 0.88m，车体 0.22m，余量充足
+-->
+<robot name="maze_bot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ==================== 属性 ==================== -->
+  <xacro:property name="body_radius"  value="0.11"/>
+  <xacro:property name="body_height"  value="0.1"/>
+  <xacro:property name="body_z"       value="0.08"/>
+  <xacro:property name="wheel_radius" value="0.033"/>
+  <xacro:property name="wheel_width"  value="0.018"/>
+  <xacro:property name="wheel_sep"    value="0.16"/>
+  <xacro:property name="caster_radius" value="0.015"/>
+  <xacro:property name="lidar_z"      value="0.22"/>
+  <xacro:property name="lidar_radius" value="0.03"/>
+  <xacro:property name="mass_body"    value="1.5"/>
+  <xacro:property name="mass_wheel"   value="0.2"/>
+  <xacro:property name="PI"           value="3.14159265359"/>
+
+  <!-- ==================== 材质 ==================== -->
+  <material name="blue">   <color rgba="0.20 0.45 0.85 1.0"/></material>
+  <material name="dark">   <color rgba="0.18 0.18 0.20 1.0"/></material>
+  <material name="silver"> <color rgba="0.70 0.72 0.75 1.0"/></material>
+  <material name="red">    <color rgba="0.85 0.20 0.20 1.0"/></material>
+
+  <!-- ==================== 惯量宏 ==================== -->
+  <xacro:macro name="box_inertia" params="m x y z">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${m*(y*y+z*z)/12}" ixy="0" ixz="0"
+               iyy="${m*(x*x+z*z)/12}" iyz="0"
+               izz="${m*(x*x+y*y)/12}"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="cyl_inertia" params="m r h">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${m*(3*r*r+h*h)/12}" ixy="0" ixz="0"
+               iyy="${m*(3*r*r+h*h)/12}" iyz="0"
+               izz="${m*r*r/2}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- ==================== base_footprint（地面投影）==================== -->
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${body_z}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ==================== base_link（车体主框架）==================== -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${body_radius}" length="${body_height}"/>
+      </geometry>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${body_radius}" length="${body_height}"/>
+      </geometry>
+    </collision>
+    <xacro:cyl_inertia m="${mass_body}" r="${body_radius}" h="${body_height}"/>
+  </link>
+
+  <!-- 车体顶盖（装饰 + 便于观察朝向）-->
+  <link name="top_plate">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${body_radius*0.92}" length="0.012"/>
+      </geometry>
+      <material name="silver"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${body_radius*0.92}" length="0.012"/>
+      </geometry>
+    </collision>
+    <xacro:cyl_inertia m="0.15" r="${body_radius*0.92}" h="0.012"/>
+  </link>
+  <joint name="top_plate_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="top_plate"/>
+    <origin xyz="0 0 ${body_height/2 + 0.006}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- 朝向标记（红色小块，指示车头方向 +X）-->
+  <link name="nose_marker">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.03 0.015 0.015"/>
+      </geometry>
+      <material name="red"/>
+    </visual>
+    <inertial>
+      <mass value="0.01"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+    </inertial>
+  </link>
+  <joint name="nose_marker_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="nose_marker"/>
+    <origin xyz="${body_radius*0.95} 0 ${body_height/2 + 0.012}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ==================== 左驱动轮 ==================== -->
+  <link name="wheel_left_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="${PI/2} 0 0"/>
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+      <material name="dark"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="${PI/2} 0 0"/>
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+    </collision>
+    <xacro:cyl_inertia m="${mass_wheel}" r="${wheel_radius}" h="${wheel_width}"/>
+  </link>
+
+  <joint name="wheel_left_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="wheel_left_link"/>
+    <!-- 轮心高度 = 轮半径（离地），base_link 中心离地 body_z →
+         相对坐标 = wheel_radius - body_z -->
+    <origin xyz="0 ${wheel_sep/2} ${wheel_radius - body_z}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <dynamics damping="0.5" friction="0.5"/>
+  </joint>
+
+  <!-- ==================== 右驱动轮 ==================== -->
+  <link name="wheel_right_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="${PI/2} 0 0"/>
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+      <material name="dark"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="${PI/2} 0 0"/>
+      <geometry>
+        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+      </geometry>
+    </collision>
+    <xacro:cyl_inertia m="${mass_wheel}" r="${wheel_radius}" h="${wheel_width}"/>
+  </link>
+
+  <joint name="wheel_right_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="wheel_right_link"/>
+    <origin xyz="0 ${-wheel_sep/2} ${wheel_radius - body_z}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <dynamics damping="0.5" friction="0.5"/>
+  </joint>
+
+  <!-- ==================== 万向轮（前部支撑）==================== -->
+  <link name="caster_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="${caster_radius}"/>
+      </geometry>
+      <material name="silver"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <sphere radius="${caster_radius}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.05"/>
+      <inertia ixx="1e-5" ixy="0" ixz="0" iyy="1e-5" iyz="0" izz="1e-5"/>
+    </inertial>
+  </link>
+
+  <joint name="caster_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="caster_link"/>
+    <origin xyz="${-body_radius*0.72} 0 ${caster_radius - body_z}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ==================== 2D 激光雷达 ==================== -->
+  <link name="laser_frame">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${lidar_radius}" length="0.035"/>
+      </geometry>
+      <material name="dark"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="${lidar_radius}" length="0.035"/>
+      </geometry>
+    </collision>
+    <xacro:cyl_inertia m="0.12" r="${lidar_radius}" h="0.035"/>
+  </link>
+
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_frame"/>
+    <!-- 雷达世界高度应为 lidar_z，相对 base_link 中心则为 lidar_z - body_z -->
+    <origin xyz="0 0 ${lidar_z - body_z}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- 雷达支架（从车体顶面伸到雷达下方）-->
+  <link name="lidar_mast">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.012" length="${lidar_z - body_z - body_height/2}"/>
+      </geometry>
+      <material name="silver"/>
+    </visual>
+    <inertial>
+      <mass value="0.02"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+    </inertial>
+  </link>
+  <joint name="lidar_mast_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_mast"/>
+    <!-- 支架中心在「车体顶面」与「雷达底面」之间 -->
+    <origin xyz="0 0 ${(body_height/2 + lidar_z - body_z)/2}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ==================== Gazebo 差速驱动插件 ==================== -->
+  <gazebo>
+    <plugin name="diff_drive" filename="libgazebo_ros_diff_drive.so">
+      <ros>
+        <namespace>/</namespace>
+      </ros>
+      <update_rate>50</update_rate>
+
+      <left_joint>wheel_left_joint</left_joint>
+      <right_joint>wheel_right_joint</right_joint>
+
+      <wheel_separation>${wheel_sep}</wheel_separation>
+      <wheel_diameter>${wheel_radius*2}</wheel_diameter>
+
+      <max_wheel_torque>12.0</max_wheel_torque>
+      <!-- max_wheel_acceleration: 0 = 不限制。
+           原先设 1.5 rad/s² 会让起步极迟钝（实测发 0.3 m/s 走 6s 只前进
+           1.22m，平均 0.2 m/s），无谓地拖长建图时间。
+           1.5kg 小车 + 12Nm 扭矩，不限制也不会失稳。 -->
+      <max_wheel_acceleration>0.0</max_wheel_acceleration>
+
+      <command_topic>cmd_vel</command_topic>
+      <odometry_topic>odom</odometry_topic>
+      <odometry_frame>odom</odometry_frame>
+      <robot_base_frame>base_footprint</robot_base_frame>
+
+      <publish_odom>true</publish_odom>
+      <publish_odom_tf>true</publish_odom_tf>
+      <publish_wheel_tf>false</publish_wheel_tf>
+    </plugin>
+  </gazebo>
+
+  <!-- ==================== Gazebo 2D 激光雷达插件 ====================
+       性能调优（2026-09-18）：
+         射线投射是 CPU 大户（成本 ∝ 射线数 × 更新率）。
+         180 线在 360° 上即 2° 角分辨率，对 5cm 栅格的 Cartographer 足够。
+         visualize=false：不需要在 rviz 里显示射线端点（省渲染开销）。
+
+       ⚠️ update_rate 与小车转速的匹配很关键：
+         扫描匹配对准的前提是【相邻帧之间有足够重合区域】。
+         帧间转角 = 转向角速度 / 激光频率。
+         实测 1.6 rad/s ÷ 8 Hz = 11.5°/帧 → 地图严重发虚（墙成灰带）。
+         现改为 12 Hz，配合探索节点 0.7 rad/s → 3.3°/帧，重合度足够。
+         「转得越快越要提采样率」是 Cartographer 调参的核心直觉。
+  -->
+  <gazebo reference="laser_frame">
+    <sensor type="ray" name="lidar">
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>false</visualize>
+      <update_rate>12</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>180</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159265</min_angle>
+            <max_angle>3.14159265</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>8.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.005</stddev>
+        </noise>
+      </ray>
+      <plugin name="laser_controller" filename="libgazebo_ros_ray_sensor.so">
+        <ros>
+          <remapping>~/out:=scan</remapping>
+        </ros>
+        <output_type>sensor_msgs/LaserScan</output_type>
+        <frame_name>laser_frame</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- ==================== 材质绑定 ==================== -->
+  <gazebo reference="base_link">  <material>Gazebo/Blue</material>  </gazebo>
+  <gazebo reference="top_plate">  <material>Gazebo/Grey</material>  </gazebo>
+  <gazebo reference="wheel_left_link">  <material>Gazebo/Black</material>  </gazebo>
+  <gazebo reference="wheel_right_link"> <material>Gazebo/Black</material>  </gazebo>
+  <gazebo reference="caster_link">      <material>Gazebo/Grey</material>   </gazebo>
+  <gazebo reference="laser_frame">      <material>Gazebo/Black</material>  </gazebo>
+
+  <!-- 轮子摩擦：足够抓地但不打滑 -->
+  <gazebo reference="wheel_left_link">
+    <mu1>0.9</mu1><mu2>0.9</mu2>
+    <kp>1000000.0</kp><kd>100.0</kd>
+    <minDepth>0.001</minDepth>
+    <maxVel>0.1</maxVel>
+  </gazebo>
+  <gazebo reference="wheel_right_link">
+    <mu1>0.9</mu1><mu2>0.9</mu2>
+    <kp>1000000.0</kp><kd>100.0</kd>
+    <minDepth>0.001</minDepth>
+    <maxVel>0.1</maxVel>
+  </gazebo>
+  <!-- 万向轮：低摩擦便于转向 -->
+  <gazebo reference="caster_link">
+    <mu1>0.0</mu1><mu2>0.0</mu2>
+    <kp>1000000.0</kp><kd>100.0</kd>
+  </gazebo>
+  <!-- 车体：低摩擦避免蹭墙卡住 -->
+  <gazebo reference="base_link">
+    <mu1>0.1</mu1><mu2>0.1</mu2>
+  </gazebo>
+
+</robot>

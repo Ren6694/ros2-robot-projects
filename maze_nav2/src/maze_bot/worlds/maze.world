@@ -1,0 +1,604 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <world name="maze_world">
+
+    <!-- ===== GUI: 默认相机 =====
+         2026-09-18 调整：原配置 z=8.10 + pitch=-1.5708（正上方垂直俯视），
+         迷宫墙仅 0.8m 高、迷宫 9x7m，垂直俯视时墙被投影成极细的线，几乎看不见，
+         看起来像"空场景"。改为倾斜 50 度俯视 + 高度 6m，能同时看清墙侧面与地面通道。
+    -->
+    <gui fullscreen="0">
+      <camera name="user_camera">
+        <!-- 相机在迷宫南侧外上方 (-7m)，朝北俯视，能同时看到墙侧面与地面通道。
+             符号由实测确定（2026-09-18）：
+               · pitch=+0.87 时能看到立体墙面 → 正 pitch = 向下看
+               · pitch=-0.85 时只见天空/远景  → 负 pitch = 向上看
+             故取正 pitch。相机 (0,-7,8) 看向原点，俯角 48.8°；
+             yaw 取 -1.5708 把视线从 +X 转到 +Y（朝北）。 -->
+        <pose>0 -7.0 8.0 0 0.8520 1.5708</pose>
+      </camera>
+    </gui>
+
+    <!-- ===== 物理引擎 =====
+         性能调优（2026-09-18）：
+           原 max_step_size=0.001 / update_rate=1000 → 软渲染下 RTF 仅 0.10，
+           跑一遍迷宫要 50 分钟墙钟，不可行。
+           改 0.005 / 250（200Hz）→ 物理步数减为 1/5。
+           小车速度 0.3 m/s，5ms 步长精度绰绰有余。
+           real_time_factor=0 表示「不限速，尽可能快跑」——
+           配合 use_sim_time，Cartographer 会正确处理快于实时的仿真。
+    -->
+    <physics name="default_physics" type="ode">
+      <max_step_size>0.005</max_step_size>
+      <real_time_factor>0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+      <ode>
+        <solver>
+          <type>quick</type>
+          <iters>30</iters>
+          <sor>1.3</sor>
+        </solver>
+        <constraints>
+          <cfm>0.0</cfm>
+          <erp>0.2</erp>
+          <contact_max_correcting_vel>100.0</contact_max_correcting_vel>
+          <contact_surface_layer>0.001</contact_surface_layer>
+        </constraints>
+      </ode>
+    </physics>
+
+    <!-- ===== 光照 ===== -->
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.01</linear>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.3 -0.8</direction>
+    </light>
+
+    <!-- ===== 地面 ===== -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>30 30</size></plane></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <cast_shadows>false</cast_shadows>
+          <geometry><plane><normal>0 0 1</normal><size>30 30</size></plane></geometry>
+          <material>
+            <ambient>0.72 0.75 0.78 1</ambient>
+            <diffuse>0.72 0.75 0.78 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ===== 迷宫墙体（共线已合并）===== -->
+
+    <model name="wall_000">
+      <static>true</static>
+      <pose>-4.0000 0.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1200 6.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1200 6.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.26 0.3 0.36 1</ambient>
+            <diffuse>0.26 0.3 0.36 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_001">
+      <static>true</static>
+      <pose>-3.0000 1.5000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1200 1.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1200 1.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.34 0.4 1</ambient>
+            <diffuse>0.3 0.34 0.4 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_002">
+      <static>true</static>
+      <pose>-2.0000 -2.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1200 2.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1200 2.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.26 0.3 0.36 1</ambient>
+            <diffuse>0.26 0.3 0.36 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_003">
+      <static>true</static>
+      <pose>-2.0000 0.5000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1200 1.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1200 1.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.34 0.4 1</ambient>
+            <diffuse>0.3 0.34 0.4 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_004">
+      <static>true</static>
+      <pose>-1.0000 0.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1200 2.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1200 2.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.26 0.3 0.36 1</ambient>
+            <diffuse>0.26 0.3 0.36 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_005">
+      <static>true</static>
+      <pose>0.0000 -2.5000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1200 1.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1200 1.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.34 0.4 1</ambient>
+            <diffuse>0.3 0.34 0.4 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_006">
+      <static>true</static>
+      <pose>1.0000 -0.5000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1200 3.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1200 3.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.26 0.3 0.36 1</ambient>
+            <diffuse>0.26 0.3 0.36 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_007">
+      <static>true</static>
+      <pose>2.0000 0.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1200 4.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1200 4.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.34 0.4 1</ambient>
+            <diffuse>0.3 0.34 0.4 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_008">
+      <static>true</static>
+      <pose>3.0000 -1.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1200 2.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1200 2.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.26 0.3 0.36 1</ambient>
+            <diffuse>0.26 0.3 0.36 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_009">
+      <static>true</static>
+      <pose>3.0000 2.5000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1200 1.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1200 1.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.34 0.4 1</ambient>
+            <diffuse>0.3 0.34 0.4 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_010">
+      <static>true</static>
+      <pose>4.0000 0.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.1200 6.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.1200 6.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.26 0.3 0.36 1</ambient>
+            <diffuse>0.26 0.3 0.36 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_011">
+      <static>true</static>
+      <pose>0.0000 -3.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>8.1200 0.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>8.1200 0.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.34 0.4 1</ambient>
+            <diffuse>0.3 0.34 0.4 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_012">
+      <static>true</static>
+      <pose>-3.5000 -2.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.26 0.3 0.36 1</ambient>
+            <diffuse>0.26 0.3 0.36 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_013">
+      <static>true</static>
+      <pose>-0.5000 -2.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.34 0.4 1</ambient>
+            <diffuse>0.3 0.34 0.4 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_014">
+      <static>true</static>
+      <pose>1.5000 -2.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.26 0.3 0.36 1</ambient>
+            <diffuse>0.26 0.3 0.36 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_015">
+      <static>true</static>
+      <pose>-2.0000 -1.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>2.1200 0.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>2.1200 0.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.34 0.4 1</ambient>
+            <diffuse>0.3 0.34 0.4 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_016">
+      <static>true</static>
+      <pose>0.5000 -1.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.26 0.3 0.36 1</ambient>
+            <diffuse>0.26 0.3 0.36 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_017">
+      <static>true</static>
+      <pose>-0.5000 0.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.34 0.4 1</ambient>
+            <diffuse>0.3 0.34 0.4 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_018">
+      <static>true</static>
+      <pose>3.5000 0.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.26 0.3 0.36 1</ambient>
+            <diffuse>0.26 0.3 0.36 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_019">
+      <static>true</static>
+      <pose>2.5000 1.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>1.1200 0.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.34 0.4 1</ambient>
+            <diffuse>0.3 0.34 0.4 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_020">
+      <static>true</static>
+      <pose>-0.5000 2.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>5.1200 0.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>5.1200 0.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.26 0.3 0.36 1</ambient>
+            <diffuse>0.26 0.3 0.36 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="wall_021">
+      <static>true</static>
+      <pose>0.0000 3.0000 0.4000 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>8.1200 0.1200 0.8000</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+            <contact><ode><max_vel>0.1</max_vel><min_depth>0.001</min_depth></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>8.1200 0.1200 0.8000</size></box></geometry>
+          <material>
+            <ambient>0.3 0.34 0.4 1</ambient>
+            <diffuse>0.3 0.34 0.4 1</diffuse>
+            <specular>0.05 0.05 0.05 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+
+    <!-- ===== 起点标记（绿）===== -->
+    <model name="start_marker">
+      <static>true</static>
+      <pose>-3.5000 -2.5000 0.002 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><cylinder><radius>0.22</radius><length>0.004</length></cylinder></geometry>
+          <material>
+            <ambient>0.10 0.75 0.30 1</ambient>
+            <diffuse>0.10 0.75 0.30 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ===== 终点标记（红）===== -->
+    <model name="goal_marker">
+      <static>true</static>
+      <pose>3.5000 2.5000 0.002 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><cylinder><radius>0.22</radius><length>0.004</length></cylinder></geometry>
+          <material>
+            <ambient>0.85 0.15 0.15 1</ambient>
+            <diffuse>0.85 0.15 0.15 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>
