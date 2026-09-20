@@ -53,7 +53,7 @@
 ## 用法
 
 ```bash
-# 前置：先起仿真（Windows 侧双击 启动ROS2仿真.bat，或 ros2 launch mybot_description line_follow.launch.py）
+# 前置：先起仿真：ros2 launch mybot_description line_follow.launch.py
 
 # 1) 对照实验（D8 验收，一条命令出表 + 五联图）
 ros2 run mybot_control line_mask.py --mode compare --outdir /tmp/d8_masks
@@ -69,8 +69,7 @@ ros2 run mybot_control line_mask.py --mode tune
 ros2 run mybot_control line_mask.py --method hsv --v-hi 90 --blur 5 --open 5
 ```
 
-工作台里也有一个 `跑D8阈值实验.bat`，双击即跑第 1 条并把图拷到
-`scratch\d8\`。
+第 1 条对照实验的入口就是 `scripts/line_mask.py --mode compare`（输出图落 `--outdir` 指定的目录）。
 
 ## 实测频率（2026-09-19 复测，更正先前"6.8 Hz、需要换 C++"的错误结论）
 
@@ -88,7 +87,7 @@ ros2 run mybot_control line_mask.py --method hsv --v-hi 90 --blur 5 --open 5
 给 D10 的设定：**`camera_rate:=30` 起步（实测约 60 Hz），控制环 20 Hz、看门狗按仿真时间算**。
 `update_rate` 这个旋钮在本机不单调，所以**别拿它当保证**，用 `ros2 topic hz` 实测。
 
-**为什么先前会量出 5.3~8.7 Hz**：工作台脚本的判活函数用了 `pgrep -f "[g]zserv"`，
+**为什么先前会量出 5.3~8.7 Hz**：早期启动脚本的判活函数用了 `pgrep -f "[g]zserv"`，
 它会漏报 → `do_start` 以为没在跑、跳过 `do_stop` → 攒出 2~3 个 gzserver 同时发 `/camera/image_raw`，
 频率既会叠加（15 被读成 60）也会因抢占而抖动（读到 5~8）。已改成 `pgrep -x gzserver` 精确匹配。
 **教训：测频率之前先 `pgrep -xc gzserver` 数清楚有几个 server**，否则任何数字都没意义。
@@ -138,7 +137,7 @@ ros2 run mybot_control line_mask.py --method hsv --v-hi 90 --blur 5 --open 5
 | (0,−0.95) yaw −10° | +11.4 cm / +10.1° | +11.5 cm @x=0.36 / +10.1°，内点 104/104 | 1 mm / 0.0° |
 
 细节与**两次错误归因的记录**（先怪开运算、再用顺序门控，都被单变量对照推翻，
-最终解法是 RANSAC）见 `workspace\projects\机器人与仿真\20260919-ROS2学习笔记\D9-线中心提取与偏差.md`。
+最终解法是 RANSAC）保留在工程笔记里。
 
 ### 给 D10 的用法
 
@@ -180,7 +179,7 @@ if lf.ok:
 稳定上限在 0.35~0.50 之间，**默认取 0.30**。反直觉的一点：0.35 比 0.25 跟得更紧——
 速度越高同样偏差对应的误差变化率越大，θ 项更早介入，车是"贴线"而不是"漂出去再拽回来"。
 
-### 验收（`跑D10巡线.bat` 实跑）
+### 验收（实跑记录）
 
 ```
 v_max=0.30  墙上 35 s  里程 8.36 m  圈数 1
@@ -188,7 +187,7 @@ v_max=0.30  墙上 35 s  里程 8.36 m  圈数 1
 ```
 "跑完一圈"用轨迹独立证明（不只看判据）：`odom_x` 跨 −1.50~1.69、`odom_y` 跨 0~1.81
 （赛道外轮廓 3.30×1.80），四个角区各有 53/48/32/27 帧经过，终点距起点 0.34 m，
-`|e|>10cm` 帧占比 0.0%。轨迹 CSV：`scratch\d10_*.csv`。
+`|e|>10cm` 帧占比 0.0%。轨迹 CSV 由 `line_follow_pd.py --csv` 写出。
 
 ### 单元测试 `ros2 run mybot_control test_pd_line.py`
 
@@ -263,7 +262,7 @@ ros2 run mybot_control test_avoid.py            # 不需要开仿真
 ros2 service call /delete_entity gazebo_msgs/srv/DeleteEntity "{name: obstacle_00}"
 ```
 
-### D11 验收（一键 `跑D11避障.bat`）
+### D11 验收（一键跑通记录）
 
 ```
 /line/pose 14.986 Hz → 车驶向障碍 → 1.2s DECEL → 3.4s OBSTACLE_STOP（零速、最近 0.296 m）
@@ -292,4 +291,4 @@ ros2 service call /delete_entity gazebo_msgs/srv/DeleteEntity "{name: obstacle_0
 | D9 | `line_features.py` 逆透视出**米制 e 与 θ** + RANSAC 鲁棒拟合；解析真值单元测试 12/12；实机三组位姿交叉验证误差 ≤1 mm；`/line/pose`(PoseStamped) 与 `/line/centers` |
 | D10 | `pd_line.py` 控制律 + `line_follow_pd.py` 节点（20 Hz 定时、丢线看门狗、自动判圈）；**0.30 m/s 35 秒跑完整圈**，\|e\| 均值 1.3 cm；速度扫描定出稳定上限 0.35~0.50；`test_pd_line.py` 含参数自洽性检查 |
 | D11 | `avoid.py` 避障状态机（FOLLOW/DECEL/OBSTACLE_STOP/SEARCH/SAFE_STOP，含迟滞与激光断流失效安全）+ `line_follow_avoid.py` 节点 + `analyze_avoid_log.py` 独立复算；**障碍前停死 29.6 cm → 运行时删障 → 自己恢复并跑完一圈**，\|e\| 1.2 cm（与 D10 同级）；`test_avoid.py` 含 4 条★安全性质与实测噪声零翻转断言 |
-| D12 | 调参台架 `d12_repeats.sh`（6 配置 × 3 重复=18 跑，复位→等停→验起跑点三段把关，区分 `HARNESS_FAIL` 与配置失败）；实测噪声底后**把主指标从逐帧 \|e\| 换成里程加权 \|e\|**（重复极差 0.23 cm → 0.03 cm，`d12_recompute.py`）；证明前馈项 **kd 是可行性边界**（kd=0.4 指令上限 0.42 rad/s < 过 r=0.45 m 圆角所需 0.49~0.63 → 6/6 全灭）；查明 **`w_max` 在 `pd_line.compute()` 里同时充当弯道减速刻度**（限幅从未触发，max\|ω\|=0.66），其"收益"与执行器无关；定稿 kp1.5/kd0.8/v0.30，**一圈 30.8 s、里程加权 \|e\| 1.07 cm**（09-19 + 09-20 两批各 3 次，跨会话中位数差 ≤0.05 cm；复跑 18/18 无一误判，原始件在 `scratch\d12r\`）；`d12_stats.py` 自动按噪声底判"同档"；桌面实录四段对比视频（`d12_record.sh`，xwd→ffmpeg，x11grab 在 WSLg 下是纯黑）；**附带破案**：录屏连挂三轮查出实时性真凶 = WSL 里 Hyper-V 对时与 systemd-timesyncd 互踩，墙上钟每 5 秒前跳 6.7 秒再弹回，把 RTF 从 1.0 打到 0.07（`clock_jitter_probe.py`，一键 `测时钟跳变.bat`） |
+| D12 | 调参台架 `d12_repeats.sh`（6 配置 × 3 重复=18 跑，复位→等停→验起跑点三段把关，区分 `HARNESS_FAIL` 与配置失败）；实测噪声底后**把主指标从逐帧 \|e\| 换成里程加权 \|e\|**（重复极差 0.23 cm → 0.03 cm，`d12_recompute.py`）；证明前馈项 **kd 是可行性边界**（kd=0.4 指令上限 0.42 rad/s < 过 r=0.45 m 圆角所需 0.49~0.63 → 6/6 全灭）；查明 **`w_max` 在 `pd_line.compute()` 里同时充当弯道减速刻度**（限幅从未触发，max\|ω\|=0.66），其"收益"与执行器无关；定稿 kp1.5/kd0.8/v0.30，**一圈 30.8 s、里程加权 \|e\| 1.07 cm**（09-19 + 09-20 两批各 3 次，跨会话中位数差 ≤0.05 cm；复跑 18/18 无一误判，原始件全部留档）；`d12_stats.py` 自动按噪声底判"同档"；桌面实录四段对比视频（`d12_record.sh`，xwd→ffmpeg，x11grab 在 WSLg 下是纯黑）；**附带破案**：录屏连挂三轮查出实时性真凶 = WSL 里 Hyper-V 对时与 systemd-timesyncd 互踩，墙上钟每 5 秒前跳 6.7 秒再弹回，把 RTF 从 1.0 打到 0.07（`clock_jitter_probe.py`） |

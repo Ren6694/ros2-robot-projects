@@ -27,7 +27,9 @@ OUT=${D12REC:-$HOME/d12rec}
 #   帧、CSV、raw.tsv 全没了（笔记里记着这件事）。而且 xwd 一帧 3~4 MB、
 #   一段 35 秒实测能写 4.7 GB，放 /tmp 等于把最贵的东西放在最容易丢的地方。
 LOGD=~/workbench_logs
-WIN=/mnt/c/USER/Desktop/scratch
+# 成品（mp4/CSV）拷出目录：默认落 Linux 侧持久区 ~/scratch；
+# 想直接进 Windows 时先 export D12_WIN="/mnt/c/<你的目录>"（WSL 里用 /mnt 路径）。
+WIN=${D12_WIN:-$HOME/scratch}
 MET=$WS/src/mybot_control/scripts/d12_metrics.py
 rm -rf "$OUT"; mkdir -p "$OUT" "$LOGD"
 

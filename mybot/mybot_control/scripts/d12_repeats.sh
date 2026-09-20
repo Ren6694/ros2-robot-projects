@@ -21,6 +21,9 @@ WS=~/mybot_ws
 SHARE=$WS/install/mybot_description/share/mybot_description
 BASE_WORLD=$SHARE/worlds/line_following.world
 OUT=${D12OUT:-$HOME/d12r}
+# 结果拷出目录：默认落 Linux 侧持久区 ~/scratch；
+# 想直接进 Windows 时先 export D12_WIN="/mnt/c/<你的目录>"（WSL 里用 /mnt 路径）。
+WIN=${D12_WIN:-$HOME/scratch}
 # ★ 为什么不放 /tmp：2026-09-19 那次 18 跑跑完、数字都抄进笔记之后，
 #   WSL 虚拟机重启过一次，/tmp 里的 18 份 CSV + raw.tsv **全部消失**
 #   （findmnt 显示 /tmp 并不是独立挂载，boot 时 systemd-tmpfiles-setup 跑过，
@@ -212,13 +215,13 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 [ -f "$SCRIPT_DIR/d12_recompute.py" ] || SCRIPT_DIR=$WS/src/mybot_control/scripts
 python3 "$SCRIPT_DIR/d12_recompute.py" "$OUT" "$OUT/recomputed.tsv" 2>&1 | tail -3
 python3 "$SCRIPT_DIR/d12_stats.py" "$OUT/recomputed.tsv" "$OUT/params.md" 2>&1 | tail -3
-# ★ 这里**不能**用 Workspace*/scratch 这种通配：桌面上存在一个字面名叫 `Workspace*` 的目录
-#   （09-19 某条没展开的 mkdir 造出来的），通配会同时命中它和真正的工作区，
-#   cp 就把结果复制进两个地方、`ls -d | head -1` 还会挑到那个假的。写死中文路径。
+# ★ 拷出目录必须写完整路径，不写通配：`ls -d */ | head -1` 之类的挑法在目录一多
+#   就可能挑错，cp 会把结果复制进非预期位置。这里固定用 $WIN（可用 D12_WIN 覆盖）。
 mkdir -p ~/d12r_last 2>/dev/null
-if cp -r "$OUT" "/mnt/c/USER/Desktop/scratch/" 2>/dev/null; then
-  echo "已拷贝整份结果到 Windows: scratch\\d12r（CSV + raw + recomputed + params.md）"
+mkdir -p "$WIN" 2>/dev/null
+if cp -r "$OUT" "$WIN/" 2>/dev/null; then
+  echo "已拷贝整份结果到 $WIN/d12r（CSV + raw + recomputed + params.md）"
 else
-  echo "★ 拷 Windows 失败（scratch 不在？），结果只在 $OUT，请手动备份"
+  echo "★ 拷出失败（$WIN 不可写？），结果只在 $OUT，请手动备份"
 fi
 echo "参数表： $OUT/params.md    复算表： $OUT/recomputed.tsv"

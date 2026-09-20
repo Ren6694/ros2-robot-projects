@@ -189,3 +189,5 @@ ros2 run mybot_description drive_check.py --speed 0.2 --duration 8 --rate 50    
 ## License
 
 Apache-2.0（见 `LICENSE`）。
+
+> 项目总览（P1–P5 脉络与成果数字）见上级目录 [README](../README.md)。
