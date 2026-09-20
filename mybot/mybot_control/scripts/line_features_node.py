@@ -60,6 +60,13 @@ class LineFeaturesNode(Node):
         self.n_ok = 0
         self.n_bad = 0
         self.last = None
+        # D12 轮 2 要扫阈值：默认完全等同 FEATURE（hsv + v_hi70 + blur5 + 不开运算），
+        # 只有显式给了 --v-hi/--blur 才偏离，保证不传参数时行为与 D9/D10/D11 一致。
+        self.mask_params = dict(FEATURE)
+        if getattr(args, 'v_hi', None) is not None:
+            self.mask_params['v_hi'] = args.v_hi
+        if getattr(args, 'blur', None) is not None:
+            self.mask_params['blur'] = args.blur
 
         self.pub_pose = self.create_publisher(PoseStamped, '/line/pose', 10)
         self.pub_mask = self.create_publisher(Image, '/line/mask', 10)
@@ -79,7 +86,9 @@ class LineFeaturesNode(Node):
         img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         # 注意用 FEATURE 而不是 BASELINE：开运算会把远处 3~4 px 的细线咬断，
         # 让 θ 多算 7°（单元测试里能看到两种 mask 的对照行）
-        mask = make_mask(img, **FEATURE)
+        # D12 轮 2：v_hi / blur 开成命令行参数，默认值仍是 FEATURE 那一套，
+        # 这样"扫阈值"不用改代码、也不用为每个点重启一次构建。
+        mask = make_mask(img, **self.mask_params)
         self.pub_mask.publish(self.bridge.cv2_to_imgmsg(mask, encoding='mono8',
                                                         header=msg.header))
         lf = extract(mask, self.geom, x_lo=self.args.x_lo, x_hi=self.args.x_hi)
@@ -149,6 +158,11 @@ def main():
     ap.add_argument('--pitch', type=float, default=0.6, help='相机俯角(rad，正=低头)')
     ap.add_argument('--x-lo', type=float, default=0.05, help='拟合最近距离(米)')
     ap.add_argument('--x-hi', type=float, default=0.60, help='拟合最远距离(米)')
+    # D12 轮 2：不给这两个参数时保持 FEATURE 原值（v_hi=70, blur=5），行为不变
+    ap.add_argument('--v-hi', type=int, default=None,
+                    help='HSV 的 V 上界(默认 70=FEATURE 基线)，调大=把更亮的像素也算进线')
+    ap.add_argument('--blur', type=int, default=None,
+                    help='高斯核(默认 5，必须是 >1 的奇数；给 0 等于关掉)')
     ap.add_argument('--publish-image', default='true', help='true/false，是否发可视化图')
     ap.add_argument('--print-every', type=float, default=1.0, help='终端打印间隔(墙上秒)')
     ap.add_argument('--duration', type=float, default=0.0, help='>0 则到时退出')
