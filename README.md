@@ -1,9 +1,9 @@
 # ros2-robot-projects
 
 > **ROS 2 / Gazebo line-following robot with vision, obstacle avoidance and a reproducible tuning bench — plus SLAM mapping and Nav2 navigation in a generated maze.**
-> 两个从零自学的 ROS 2 项目：一台视觉巡线 + 避障小车（含 18 圈可复现调参台架），一台在程序生成迷宫里跑 Cartographer 建图与 Nav2 自主导航的差速小车。
+> 三个从零自学的 ROS 2 项目：一台视觉巡线 + 避障小车（含 18 圈可复现调参台架），一台在程序生成迷宫里跑 Cartographer 建图与 Nav2 自主导航的差速小车，一台六轴机械臂的 MoveIt2 点位闭环。
 
-## 两个项目
+## 三个项目
 
 ### mybot —— 视觉巡线 + 避障小车 · [项目 README](mybot/README.md)
 
@@ -21,6 +21,17 @@ Nav2 自主导航全程 **SUCCEEDED**、**0 次恢复行为**、到达时距目�
 
 ![RViz 俯视：一次完整导航（2.4× 播放）](maze_nav2/docs/assets/maze_nav.gif)
 
+### arm6_moveit —— 六轴机械臂 + MoveIt2 闭环 · [项目 README](arm6_moveit/README.md)
+
+一串"抓取-放置"点位：**9/9 规划成功、9/9 执行成功、到位误差 1.0e-4 rad（容差的 3%）**。
+手写 URDF/xacro + SRDF（碰撞矩阵采样算到收敛）+ `ros2_control` mock 硬件 + 自研点位节点直连
+`MoveGroup`，逐点位 JSONL 运动日志 → 曲线图 → RViz 三张带内容判据的截图。
+零依赖的浏览器 3D 预览（`arm6-viewer.html`，双击即开，零件清单由 URDF 生成）。
+
+| 零位 up | 执行中（弯臂） | 结束归位 |
+|---|---|---|
+| ![up](arm6_moveit/artifacts/rviz_20260930-165553_idle.png) | ![moving](arm6_moveit/artifacts/rviz_20260930-165553_moving.png) | ![final](arm6_moveit/artifacts/rviz_20260930-165553_final.png) |
+
 ## 关键数字
 
 | 项目 | 指标 | 数值 | 出处 |
@@ -31,6 +42,10 @@ Nav2 自主导航全程 **SUCCEEDED**、**0 次恢复行为**、到达时距目�
 | mybot | 避障停距 | **29.6 cm**（障碍前停死 → 删障后自行恢复跑完） | D11 验收 |
 | mybot | 固件混控断言 | **33 条**（符号 / 饱和等比缩 / NaN→刹车 / 死区 / 单位往返） | `test_mixer.cpp` |
 | maze_nav2 | 导航结果 | **SUCCEEDED · 0 恢复 · 末距 0.246 m**（55.6 s 仿真时间） | 2026-09-20 实录（`navigate` 模式） |
+| arm6_moveit | 点位规划 / 执行 | **9/9 · 9/9**，`retries=0` | `MOTION-SUMMARY … RESULT PASS`（`waypoint_mover`） |
+| arm6_moveit | 到位误差 | **1.0e-4 rad = 容差的 3%**（`tol_ratio=0.03`） | 同上，逐点位 `MOTION` 行 |
+| arm6_moveit | 跨次一致性 | 路径长度 11.43 rad 两批差 **0.0002 rad** | `compare_motion_runs.py` |
+| arm6_moveit | 外观改造未碰物理 | collision **12 link / 10 几何体逐项一致**、visual 侧向外扩 **≤ 5 mm** | `check_visual_envelope.py`（`BASELINE-RESULT` / `ENVELOPE-RESULT`） |
 
 ## 工程方法（为什么这些数字可信）
 
@@ -46,9 +61,10 @@ Nav2 自主导航全程 **SUCCEEDED**、**0 次恢复行为**、到达时距目�
 
 ## 环境与怎么跑
 
-WSL2 · Ubuntu 22.04 · ROS 2 Humble · Gazebo Classic。依赖安装与启动步骤各自写在
-[mybot/README.md](mybot/README.md) 与 [maze_nav2/README.md](maze_nav2/README.md) 里，这里不重复正文。
-两个项目都保持"克隆 → `colcon build` → 一条命令启动"的可运行状态；演示 GIF 全部来自真实仿真录制（非渲染图）。
+WSL2 · Ubuntu 22.04 · ROS 2 **Humble** · Gazebo Classic（`mybot`、`maze_nav2`）；
+Ubuntu 24.04 · ROS 2 **Jazzy** · MoveIt 2.12.4（`arm6_moveit`，无 Gazebo 依赖，
+`arm6-viewer.html` 连 ROS 都不需要）。依赖安装与启动步骤各自写在三个项目的 `README.md` 里，这里不重复正文。
+三个项目都保持"克隆 → `colcon build` → 一条命令启动"的可运行状态；演示 GIF 与截图全部来自真实运行录制（非渲染图）。
 
 ## 结构导览
 
@@ -61,10 +77,16 @@ ros2-robot-projects/
 ├── maze_nav2/                  # 项目二：迷宫 Cartographer + Nav2
 │   ├── src/maze_bot/           #   单包：launch / config / maps / urdf / worlds / scripts
 │   └── docs/assets/            #   演示 GIF（导航实录）+ TF 树图
+├── arm6_moveit/                # 项目三：六轴机械臂 MoveIt2 闭环
+│   ├── src/{arm_description,arm_moveit_config,arm_demo}
+│   ├── scripts/                #   13 个带 *-RESULT 的验收/诊断脚本
+│   ├── docs/                   #   8 篇工程笔记（含一次真实撤回）
+│   ├── artifacts/              #   运动曲线图 + RViz 三判据截图 + 改造前 collision 基线
+│   └── arm6-viewer.html        #   零依赖浏览器 3D 预览（零件清单由 URDF 生成）
 ├── LICENSE · .gitignore · .gitattributes
 ```
 
-两个 `docs/assets/` 只放演示素材，不参与构建。
+`mybot/` 与 `maze_nav2/` 的 `docs/assets/` 只放演示素材，不参与构建。
 
 ## License
 

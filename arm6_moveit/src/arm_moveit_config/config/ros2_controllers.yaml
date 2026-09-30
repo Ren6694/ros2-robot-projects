@@ -1,0 +1,94 @@
+# =============================================================================
+#  ros2_controllers.yaml —— ros2_control 侧：controller_manager 与 JTC 参数
+#
+#  这份文件由 generate_demo_launch() 直接喂给 `ros2_control_node`，
+#  所以它的**顶层键就是节点参数**：controller_manager 段声明"有哪些控制器"，
+#  其余段是各控制器自己的参数。
+#
+#  update_rate: 100 Hz 与 JTC 的 state_publish_rate: 50 Hz
+#    控制回路 10 ms 一步；joint_states 以 50 Hz 广播（MoveIt 的当前状态、
+#    robot_state_publisher 的 TF 都来自它）。50 Hz 是刻意选的：
+#    TF 抖动周期 20 ms，rviz 看起来流畅，同时 /joint_states 的带宽只占
+#    DDS 很小一部分；真机上这个值要和总线周期对齐，不能随意提。
+#
+#  command_interfaces: [position] —— mock 硬件只实现位置跟随，
+#    换成真机驱动时这里可能变成 [velocity] 或 [position, velocity]，
+#    但 URDF 的 <ros2_control> 才是接口能力的唯一声明处，本文件只做"选择"。
+#
+#  constraints 里的 stopped_velocity_tolerance / goal 误差：
+#    JTC 判定"到达"的依据。goal: 0.003 rad(约 0.17°) 是抓取类任务常用的量级；
+#    太松会让 MoveIt 以为到位了（实际差几度），太紧会让 JTC 永远不收尾、
+#    最终被 MoveIt 的执行看门狗判超时。
+#
+#  allow_nonzero_velocity_at_trajectory_end: true
+#    关掉"轨迹终点速度必须为 0"的默认检查。TOTG 在两段轨迹拼接时
+#    （本项目的多目标点循环）终点常带非零速度，不开这个就会被 JTC 拒绝。
+#
+#  allow_partial_joints_goal: true  —— 这条是被 arm_demo 逼出来的，不是随手开的：
+#    本控制器同时管 8 个关节（6 臂 + 2 指），而 MoveIt 按 planning group 下发轨迹：
+#      group=arm      -> 轨迹里只有 6 个关节
+#      group=gripper  -> 轨迹里只有 2 个手指关节
+#    默认 false 时 JTC 会直接 REJECTED（报 "Trajectory goal has X joints but
+#    controller has Y"），现象是"规划成功、执行瞬间失败"。允许部分关节目标后，
+#    没出现在目标里的关节其 command interface 不会被写入，保持上一次指令
+#    —— 在 mock_components 上等价于"原地不动"，所以语义是安全的。
+#    真机上如果要"手臂运动时夹爪必须保持力矩"，就应该改成拆两个 JTC，
+#    改动清单见 docs/04 §5。
+# =============================================================================
+controller_manager:
+  ros__parameters:
+    update_rate: 100  # Hz
+
+    arm6_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+arm6_controller:
+  ros__parameters:
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+      - finger1_joint
+      - finger2_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 50.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: true  # 见头部注释：夹爪组点位只带 2 个关节
+    allow_nonzero_velocity_at_trajectory_end: true
+    constraints:
+      stopped_velocity_tolerance: 0.02
+      goal_time: 0.0
+      joint1:
+        trajectory: 0.05
+        goal: 0.003
+      joint2:
+        trajectory: 0.05
+        goal: 0.003
+      joint3:
+        trajectory: 0.05
+        goal: 0.003
+      joint4:
+        trajectory: 0.05
+        goal: 0.003
+      joint5:
+        trajectory: 0.05
+        goal: 0.003
+      joint6:
+        trajectory: 0.05
+        goal: 0.003
+      finger1_joint:
+        trajectory: 0.01
+        goal: 0.001
+      finger2_joint:
+        trajectory: 0.01
+        goal: 0.001

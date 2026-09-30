@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<!--
+  package.xml —— arm_moveit_config
+
+  这是 MoveIt2 的"配置包"：没有代码，只有 SRDF/YAML/launch。
+  它的作用是**把同一个 URDF 解释成一份规划问题**：
+    哪些关节属于同一个规划组(SRDF)、用什么 IK 求解器(kinematics.yaml)、
+    规划器与参数(planning pipelines)、规划出的轨迹交给谁执行
+    (moveit_controllers.yaml -> ros2_control 的 JTC)。
+
+  依赖里值得说明的两点：
+    moveit_configs_utils —— 提供 MoveItConfigsBuilder，launch 文件靠它把
+      config/ 下的一堆 yaml 装配成 move_group 的参数树；少了它就得手写
+      几十个参数键，极易与 MoveIt 内部命名漂移。
+    moveit_ros_move_group / moveit_planners_ompl / moveit_simple_controller_manager
+      —— 分别是规划节点、OMPL 规划器插件、"把轨迹发给 JTC"的控制器管理插件。
+      这三个是"能规划 + 能执行"的最小集合，其余（CHOMP/STOMP/Servo）按需再加。
+-->
+<package format="3">
+  <name>arm_moveit_config</name>
+  <version>1.0.0</version>
+  <description>arm6 六轴机械臂的 MoveIt2 配置包（SRDF、IK、规划管线、控制器与启动文件）。</description>
+  <maintainer email="ren@example.com">Ren</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>moveit_ros_move_group</exec_depend>
+  <exec_depend>moveit_ros_visualization</exec_depend>
+  <exec_depend>moveit_configs_utils</exec_depend>
+  <exec_depend>moveit_planners_ompl</exec_depend>
+  <exec_depend>moveit_simple_controller_manager</exec_depend>
+  <!-- 注：warehouse（db:=true 时才启动，用于保存/回放规划结果）依赖
+       moveit_warehouse_ros_mongo，本机未安装，因此**故意不写进 exec_depend**，
+       否则 rosdep install 会直接失败。warehouse_db.launch.py 仍保留，
+       需要时 apt 装该包即可启用。 -->
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>joint_trajectory_controller</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <!-- 模型的唯一来源：配置包不复制 URDF，只引用描述包里的 xacro -->
+  <exec_depend>arm_description</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

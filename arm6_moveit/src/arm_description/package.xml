@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<!--
+  package.xml —— 机械臂描述包（纯模型，不含控制逻辑）
+
+  为什么单独拆一个 description 包：
+    ROS 2 社区的通行做法是把"机器人长什么样"（URDF/Xacro/mesh）与
+    "机器人怎么动"（MoveIt 配置、控制器、任务节点）分开。
+    这样 moveit_config、rviz、后续可能的 Gazebo 仿真都能复用同一份模型，
+    避免 URDF 被复制成两份后各自漂移。
+
+  exec_depend 里列出的是"运行这份模型/启动文件时真正需要的外部命令"：
+    robot_state_publisher  —— 把 URDF 变成 /robot_description 话题 + TF 树
+    joint_state_publisher  —— 无硬件时用 GUI/默认值喂 /joint_states
+    xacro                  —— .xacro -> .urdf 的预处理
+    rviz2                  —— display.launch.py 的可视化窗口
+  注意 buildtool_depend 是 ament_cmake：ROS 2 里即便是"只有配置文件"的包，
+  也推荐用 ament_cmake（它的 install(DIRECTORY ...) 比 ament_python 更适合资源文件）。
+-->
+<package format="3">
+  <name>arm_description</name>
+  <version>1.0.0</version>
+  <description>
+    6-DOF 教学/算法验证用机械臂的 URDF(Xacro) 模型、ros2_control 硬件声明与
+    单独可视化启动文件。
+  </description>
+  <maintainer email="ren@example.com">Ren</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher_gui</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <!-- ros2_control 的 <ros2_control> 标签由 controller_manager 解析；
+       本包只声明硬件接口，真正的 controller_manager 节点在 moveit 启动文件里拉起。 -->
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

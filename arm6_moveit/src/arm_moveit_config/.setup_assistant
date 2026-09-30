@@ -1,0 +1,29 @@
+# =============================================================================
+#  .setup_assistant —— MoveIt 配置包的"来源声明"
+#
+#  这不是可选的元数据：MoveItConfigsBuilder.__init__() 会读它来决定
+#    urdf:  去哪个 share 目录加载哪个 xacro   -> robot_description
+#    srdf:  语义描述文件在哪                   -> robot_description_semantic
+#  没有这个文件时 builder 只打一行 warning，然后把 URDF 路径猜成
+#  config/arm6.urdf（不存在），最终 move_group 拿到空的 robot_description。
+#
+#  本工程是**手写**配置包（结构完全对齐 Setup Assistant 的输出），
+#  所以这份声明同时是"再生成入口"：
+#    ros2 launch arm_moveit_config setup_assistant.launch.py
+#  打开 GUI 后会直接读到 arm_description 里的 xacro，改完可覆盖写回 config/。
+# =============================================================================
+moveit_setup_assistant_config:
+  urdf:
+    package: arm_description
+    relative_path: urdf/arm6.urdf.xacro
+  srdf:
+    package: arm_moveit_config
+    relative_path: config/arm6.srdf
+  # 以下三项由 Setup Assistant 的 ros2_control 面板写入，本工程按同一口径手写：
+  #   launch_control_node   true  -> demo 里由 MoveIt 拉起 controller_manager
+  #   generate_moveit_controllers 用 moveit_simple_controller_manager 对接 JTC
+  #   state_publish_rate    与 config/ros2_controllers.yaml 保持一致
+  ros2_control:
+    launch_control_node: true
+    generate_moveit_controllers: true
+    moveit_controller_plugin: moveit_simple_controller_manager/MoveItSimpleControllerManager

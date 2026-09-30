@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<!--
+  =========================================================================
+   package.xml —— arm_demo
+   作用: 在 MoveIt 已经配好的机械臂上，按一串"点位"依次规划并执行，
+         同时把每次规划/执行的时间、轨迹、误差写成机器可读日志(JSONL+CSV)。
+   构建: ament_python（纯 Python，无 C++）
+   依赖说明（都是"用到才声明"，不写无用的 depend）:
+     rclpy                     节点框架 + ActionClient
+     moveit_msgs               /move_action 与 /execute_trajectory 的消息定义
+     sensor_msgs               /joint_states
+     control_msgs              /arm6_controller/controller_state（参考值/反馈值/误差）
+     python3-yaml              读 config/waypoints.yaml
+     arm_moveit_config         只提供模型与配置，本包不在代码里 import 它，
+                               但 launch 时要靠它把 move_group 拉起来 —— exec_depend 是对的
+  =========================================================================
+-->
+<package format="3">
+  <name>arm_demo</name>
+  <version>1.0.0</version>
+  <description>
+    ROS 2 Jazzy + MoveIt 2.12 机械臂点位控制演示节点：
+    通过 moveit_msgs/action/MoveGroup 规划、moveit_msgs/action/ExecuteTrajectory 执行，
+    输出规划耗时、轨迹时长、跟踪误差与到位误差的可复算日志。
+  </description>
+  <maintainer email="ren@example.com">Ren</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>moveit_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>control_msgs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>arm_moveit_config</exec_depend>
+  <exec_depend>arm_description</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

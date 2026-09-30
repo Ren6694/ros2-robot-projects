@@ -1,0 +1,77 @@
+# =============================================================================
+#  joint_limits.yaml —— 规划用的速度/加速度/加加速度上限（覆盖或补充 URDF）
+#
+#  为什么必须单独有这份文件（URDF 里不是已经有 velocity 了吗）：
+#    URDF 的 <limit> 只有 velocity 与 effort，**没有加速度和 jerk**。
+#    而 MoveIt 的时间参数化用的是 Time-Optimal Path Parameterization(TOTG)：
+#    它要把一条纯几何路径配上时间轴，约束集必须是 (v, a, jerk)。
+#    缺 a 时 TOTG 会退化成"只按速度限速"，拐角处加速度理论上无穷大 ——
+#    日志里那句 "Joint limit for acceleration not defined" 就是这个，
+#    表现出来是"轨迹能跑但电机指令是方波"。真机上这一步不设就是给硬件挖坑。
+#
+#  与 URDF 的关系：MoveIt 取 **两者较小值**。所以这里的数值一律 ≤ URDF，
+#  改 URDF 限位时记得同步（scripts/check_limits.sh 会做一致性校验）。
+#
+#  取值依据（教学级铝臂，按"末端越轻越可以快"分配）：
+#    joint1..3 承担主要重力矩，v=3.14 rad/s, a=1.875 rad/s²（约 0.6 v/s²比）
+#    joint4..6 腕部惯量小，v=4.19, a=2.5
+#    指关节是 prismatic，单位 m/s、m/s²，行程只有 40 mm，a=0.5 已足够
+#    max_jerk 限制加加速度，让 JTC 下发的指令连续（真机上直接决定振动与噪声）
+# =============================================================================
+joint_limits:
+  joint1:
+    has_velocity_limits: true
+    max_velocity: 3.14
+    has_acceleration_limits: true
+    max_acceleration: 1.875
+    has_jerk_limits: true
+    max_jerk: 200.0
+  joint2:
+    has_velocity_limits: true
+    max_velocity: 3.14
+    has_acceleration_limits: true
+    max_acceleration: 1.875
+    has_jerk_limits: true
+    max_jerk: 200.0
+  joint3:
+    has_velocity_limits: true
+    max_velocity: 3.14
+    has_acceleration_limits: true
+    max_acceleration: 1.875
+    has_jerk_limits: true
+    max_jerk: 200.0
+  joint4:
+    has_velocity_limits: true
+    max_velocity: 4.19
+    has_acceleration_limits: true
+    max_acceleration: 2.5
+    has_jerk_limits: true
+    max_jerk: 200.0
+  joint5:
+    has_velocity_limits: true
+    max_velocity: 4.19
+    has_acceleration_limits: true
+    max_acceleration: 2.5
+    has_jerk_limits: true
+    max_jerk: 200.0
+  joint6:
+    has_velocity_limits: true
+    max_velocity: 4.19
+    has_acceleration_limits: true
+    max_acceleration: 2.5
+    has_jerk_limits: true
+    max_jerk: 200.0
+  finger1_joint:
+    has_velocity_limits: true
+    max_velocity: 0.10
+    has_acceleration_limits: true
+    max_acceleration: 0.5
+    has_jerk_limits: true
+    max_jerk: 100.0
+  finger2_joint:
+    has_velocity_limits: true
+    max_velocity: 0.10
+    has_acceleration_limits: true
+    max_acceleration: 0.5
+    has_jerk_limits: true
+    max_jerk: 100.0

@@ -1,0 +1,75 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /MotionPlanning1
+  - Class: rviz_common/Help
+    Name: Help
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Value: true
+    # TF 在提交版配置里是**关掉的**：6 个关节 + 世界原点会画出十几套坐标轴，
+    # 把截图证据（06）糊满，而这三张图要证明的是"模型加载对、机器人在动、停在末点位"。
+    # 需要排查"末端 TF 与 RobotModel 不重合"（通常是 SRDF 的 tip 选错，
+    # 或 robot_state_publisher 没收到 /joint_states）时再手动勾上 TF ——
+    # 命令行覆盖：ros2 launch arm_moveit_config moveit.launch.py（rviz 起来后在 Displays 里勾）。
+    - Class: rviz_default_plugins/TF
+      Enabled: false
+      Name: TF
+      Value: false
+    - Class: moveit_rviz_plugin/MotionPlanning
+      Name: MotionPlanning
+      Planned Path:
+        # Loop Animation 必须是 false —— 这条是被截图证据逼出来的：
+        # 开着它时"规划路径机器人"会反复重播整条轨迹，截图会在随机相位抓到它，
+        # 于是画面里同时出现两套位形不同的手臂。实测 artifacts/rviz_final_final.png：
+        # 竖直的是状态机器人（停在 up_final），横躺在地面网格上的是重播机器人
+        # 被抓在上一条 extended(joint2=90°) 的那一帧。评审会以为模型姿态错了。
+        # 关掉后重播机器人停在轨迹终点，与状态机器人重合，截图才是单义的。
+        Loop Animation: false
+        State Display Time: 0.05 s
+        Trajectory Topic: display_planned_path
+      Planning Scene Topic: monitored_planning_scene
+      Robot Description: robot_description
+      Scene Geometry:
+        Scene Alpha: 1
+      Scene Robot:
+        Robot Alpha: 0.5
+      Value: true
+  # 固定坐标系 = 规划组 base_frame。SRDF 里 arm 链的起点是 base_link，
+  # 所以规划、goal 姿态显示都以它为参考；world 只作为静态 TF 的根存在。
+  Global Options:
+    Fixed Frame: base_link
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      # 相机参数是"截图实测"出来的，不是按几何算出来的：
+      #   原来写 Distance 2.0 + 焦点 z=0.35，理由是"整臂高 0.94 m"，
+      #   但 zero 位姿下夹爪顶端实际到 z≈1.05 m，Orbit 的竖直视场
+      #   (默认 FOV 0.7 rad，2 m 处约覆盖 0.74 m) 根本装不下 —— 截图里上半截被裁掉。
+      #   实测 3.2 m + 焦点抬高到 z=0.52 才完整入画（见 artifacts/rviz_*_idle.png 的迭代）。
+      #   再改小之前先跑一遍 scripts/capture_rviz.sh，别只看数字。
+      Distance: 1.62
+      Focal Point:
+        X: 0.20
+        Y: 0.0
+        Z: 0.46
+      Name: Current View
+      Pitch: 0.30
+      Target Frame: base_link
+      Yaw: -1.15
+Window Geometry:
+  Height: 960
+  QMainWindow State: 000000ff00000000fd0000000100000000000002b400000375fc0200000005fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000004100fffffffb000000100044006900730070006c006100790073010000003d00000123000000c900fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e00670100000166000001910000018800fffffffb0000000800480065006c0070000000029a0000006e0000006e00fffffffb0000000a0056006900650077007301000002fd000000b5000000a400ffffff000001f60000037500000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  # 1600 宽是为了截图：左侧三个面板固定占掉约 700 px，窗口再小 3D 视图就成了竖条
+  Width: 1600

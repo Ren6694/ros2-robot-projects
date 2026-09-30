@@ -1,0 +1,54 @@
+# =============================================================================
+#  moveit_controllers.yaml —— MoveIt 侧："规划出来的轨迹交给谁执行"
+#
+#  这份文件是 MoveIt 与 ros2_control 的**接缝**，两边各读一半：
+#    moveit_controller_manager        -> move_group 用哪个控制器管理插件
+#    moveit_simple_controller_manager -> 插件用它把 group 的关节映射到 action
+#    trajectory_execution             -> 执行监控(TEM)的容差
+#
+#  为什么 8 个关节（6 臂 + 2 指）合成**一个** JTC：
+#    拆成 arm6_controller + gripper_controller 更接近真机（夹爪常由另一路总线驱动），
+#    但代价是：MoveIt 要按关节名把一条轨迹切成两段分别下发，两段之间没有同步，
+#    "手臂到位后夹爪才动"这种时序要靠 additional_goals/约束去保证。
+#    本项目的验证目标是规划链路的正确性与可回归，单控制器的时序是天然同步的，
+#    因此选单 JTC；拆分方式在 docs/04 §5 里给了改动清单。
+#
+#    ★ 这个选择有一个连带条件，改任何一边都要同时改另一边（成对约束）：
+#      arm_demo 是按 planning group 逐条下发的 —— group=arm 的轨迹只有 6 个关节、
+#      group=gripper 的只有 2 个。单 JTC 管 8 个关节时，必须把
+#      ros2_controllers.yaml 的 allow_partial_joints_goal 设成 true，
+#      否则控制器会在收到目标的一瞬间 REJECTED，表现为"规划成功但执行失败"，
+#      而 MoveIt 侧只报 CONTROL_FAILED(-4)，很容易误判成规划器的问题。
+#      若哪天改成两个 JTC，就把该参数改回 false（部分关节目标就不再需要了）。
+#
+#  allowed_start_tolerance: 0.01 —— 执行开始时"当前状态与轨迹首点的最大偏差"。
+#    mock 硬件下恒为 0；真机上这是最常见的"execute() 直接 ABORTED"原因，
+#    写在这里并注释清楚，是为了换硬件时一眼能看到旋钮。
+#  allowed_execution_duration_scaling: 1.2 —— 实际耗时 > 规划时长 x1.2 判定失败，
+#    是 TEM(execution_duration_monitoring) 唯一的看门狗，别关掉。
+# =============================================================================
+trajectory_execution:
+  allowed_execution_duration_scaling: 1.2
+  allowed_goal_duration_margin: 0.5
+  allowed_start_tolerance: 0.01
+  execution_duration_monitoring: true
+
+moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+
+moveit_simple_controller_manager:
+  controller_names:
+    - arm6_controller
+
+  arm6_controller:
+    type: FollowJointTrajectory
+    action_ns: follow_joint_trajectory
+    default: true
+    joints:
+      - joint1
+      - joint2
+      - joint3
+      - joint4
+      - joint5
+      - joint6
+      - finger1_joint
+      - finger2_joint

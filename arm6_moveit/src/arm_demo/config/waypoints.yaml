@@ -1,0 +1,110 @@
+# =============================================================================
+#  文件: config/waypoints.yaml   —— arm_demo 的点位表（ROS_PARAM 风格，但由节点自己读）
+#
+#  为什么用"节点自己读文件"而不是 ros2 param 传一个嵌套字典：
+#    1) 点位表是有顺序的列表，ros2 param 传 list-of-dict 在命令行里几乎不可维护；
+#    2) 放在文件里 → 换一串任务只改这个 yaml，不动代码、不重新构建（路径可用
+#       waypoints_file 参数指到源码目录，开发期改完直接重跑）；
+#    3) 这份文件本身就是"任务脚本"，评审时看它就知道机械臂被要求做什么。
+#
+#  约定：
+#    * 角度单位是 rad（不是度），因为 moveit_msgs/JointConstraint.position 是 rad；
+#      注释里同时给出角度，避免换算错误。
+#    * group 必须是 SRDF 里定义的 planning group：本工程只有 arm 和 gripper。
+#    * joints 里只写该组要动的关节，其余关节由 move_group 保持在当前值。
+#    * 目标值必须同时满足两件事，否则会在日志里以不同错误码暴露：
+#        - 在 URDF 的 <limit> 内   —— 否则 INVALID_GOAL / GOAL_STATE_INVALID
+#        - 不自碰撞               —— 否则 GOAL_IN_COLLISION(-12)
+#      这两种失败是"点位表写错了"，不是链路坏了，所以判据里照样记 FAIL，
+#      但 err_code 能让人一眼分开它们。
+#
+#  顺序刻意排成一个"抓取-放置"节拍：张开 → 到位 → 夹住 → 搬走 → 松开 → 归位，
+#  这样相邻两条点位的起点=上一条的终点，日志里的 path_len_rad 才有意义。
+# =============================================================================
+
+waypoints:
+  - name: up
+    group: arm
+    note: SRDF group_state 'up'，全零位；作为回归的确定起点
+    joints:
+      joint1: 0.0
+      joint2: 0.0
+      joint3: 0.0
+      joint4: 0.0
+      joint5: 0.0
+      joint6: 0.0
+
+  - name: grip_open
+    group: gripper
+    note: 指片行程 0.040 m（= URDF 的 f_stroke）
+    joints:
+      finger1_joint: 0.040
+      finger2_joint: 0.040
+
+  - name: home
+    group: arm
+    note: SRDF group_state 'home'：(0,-34°,63°,0,-29°,0)
+    joints:
+      joint1: 0.0
+      joint2: -0.60
+      joint3: 1.10
+      joint4: 0.0
+      joint5: -0.50
+      joint6: 0.0
+
+  - name: pick
+    group: arm
+    note: 左前方取料位 (30°,-20°,52°,45°,-40°,90°)
+    joints:
+      joint1: 0.5236
+      joint2: -0.3491
+      joint3: 0.9076
+      joint4: 0.7854
+      joint5: -0.6981
+      joint6: 1.5708
+
+  - name: grip_close
+    group: gripper
+    note: 回零即闭合；这里没有工件，只验证"两指对称"这一建模约定
+    joints:
+      finger1_joint: 0.0
+      finger2_joint: 0.0
+
+  - name: place
+    group: arm
+    note: 右后方放料位 (-50°,-29°,69°,-60°,-23°,-60°)
+    joints:
+      joint1: -0.8727
+      joint2: -0.5000
+      joint3: 1.2000
+      joint4: -1.0472
+      joint5: -0.4000
+      joint6: -1.0472
+
+  - name: grip_release
+    group: gripper
+    joints:
+      finger1_joint: 0.030
+      finger2_joint: 0.030
+
+  - name: extended
+    group: arm
+    note: SRDF group_state 'extended'，j2=90° 接近 ±100° 限位，用来验证限位与容差没写崩
+    joints:
+      joint1: 0.0
+      joint2: 1.5708
+      joint3: 0.0
+      joint4: 0.0
+      joint5: 0.0
+      joint6: 0.0
+
+  - name: up_final
+    group: arm
+    note: 归位；回归脚本比对 up 与 up_final 两条的到位误差即可看出重复定位精度
+    joints:
+      joint1: 0.0
+      joint2: 0.0
+      joint3: 0.0
+      joint4: 0.0
+      joint5: 0.0
+      joint6: 0.0

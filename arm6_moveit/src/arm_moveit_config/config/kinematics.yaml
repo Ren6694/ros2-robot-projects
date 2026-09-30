@@ -1,0 +1,20 @@
+# =============================================================================
+#  kinematics.yaml —— 逆运动学求解器配置
+#
+#  键名 = SRDF 里的 group 名（本工程是 "arm"）。gripper 组不写，
+#  因为它没有末端位姿概念（两个 prismatic 关节由 named target 直接给值）。
+#
+#  为什么用 KDL 而不是 bio_ik / trac_ik：
+#    KDL 是 MoveIt 自带的解析-数值混合求解（NR 迭代 + 零空间投影），
+#    零外部依赖、结果确定，适合做回归基线。bio_ik（LM 优化）在 6 轴上
+#    成功率更高但每次重启可能给出不同解，会把"规划器行为"混进"求解器随机性"。
+#    本工程把 bio_ik 当作可替换项：改这一行即可，其余配置不动。
+#
+#  timeout=0.05 s 的取值依据：KDL 对 6 轴臂一次成功求解通常 < 5 ms，
+#  50 ms 已经是 10 倍余量；再放大只会把"目标不可达"的失败判定拖慢，
+#  而 rviz 里拖动 goal 是实时交互，超时太长会明显卡顿。
+# =============================================================================
+arm:
+  kinematics_solver: kdl_kinematics_plugin/KDLKinematicsPlugin
+  kinematics_solver_search_resolution: 0.005
+  kinematics_solver_timeout: 0.05

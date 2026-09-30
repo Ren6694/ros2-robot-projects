@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>arm6 模型 3D 预览 —— URDF/SRDF 参数 1:1 复刻</title>
+<style>
+  html,body{margin:0;height:100%;background:#14161a;overflow:hidden;
+    font-family:"Segoe UI",system-ui,sans-serif;color:#d8dbe0}
+  #c{display:block;width:100vw;height:100vh;cursor:grab}
+  #panel{position:fixed;top:12px;left:12px;width:270px;background:rgba(22,25,30,.92);
+    border:1px solid #333a44;border-radius:10px;padding:12px 14px;font-size:13px}
+  #panel h1{font-size:15px;margin:0 0 6px;color:#ff8c3a}
+  #panel .sub{color:#8a93a0;font-size:11px;line-height:1.5;margin-bottom:8px}
+  .btns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  button{background:#2a3038;color:#d8dbe0;border:1px solid #444d58;border-radius:6px;
+    padding:5px 10px;font-size:12px;cursor:pointer}
+  button:hover{background:#39414c}
+  button.on{background:#b3541e;border-color:#d96824;color:#fff}
+  .jrow{display:grid;grid-template-columns:64px 1fr 52px;align-items:center;gap:6px;margin:4px 0}
+  .jrow label{font-size:12px;color:#aab3bf}
+  .jrow output{font-size:11px;color:#7fd1a0;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:#d96824}
+  #hud{position:fixed;left:12px;bottom:12px;background:rgba(22,25,30,.88);
+    border:1px solid #333a44;border-radius:8px;padding:8px 12px;font-size:12px;
+    color:#9fb6cc;line-height:1.7;font-variant-numeric:tabular-nums}
+  #hud b{color:#ff8c3a}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="panel">
+  <h1>arm6 · 6 轴臂 + 二指夹爪</h1>
+  <div class="sub">按 <b>arm6.urdf.xacro</b> 参数 1:1 复刻（世界系 +z 向上，单位 m）。<br>
+  鼠标拖动旋转 / 滚轮缩放。零位 = 全 0 = 手臂竖直向上（SRDF "up"）。</div>
+
+  <div class="btns">
+    <button id="p_up">up 零位</button>
+    <button id="p_home">home 收臂</button>
+    <button id="p_ext">extended 满伸</button>
+  </div>
+  <div class="btns">
+    <button id="g_open">夹爪 open</button>
+    <button id="g_closed">夹爪 closed</button>
+  </div>
+
+  <div id="sliders"></div>
+</div>
+
+<div id="hud"></div>
+
+<script>
+"use strict";
+/* ============ URDF 参数（与 arm6.urdf.xacro 一致） ============ */
+const P = {
+  base_r:0.075, base_h:0.035,
+  l1:0.200, r1:0.055,
+  l2:0.240, w2:0.060,
+  l3:0.200, w3:0.050,
+  l4:0.080, r4:0.038,
+  l5:0.060, w5:0.045,
+  l6:0.030, r6:0.032,
+  gb_x:0.045, gb_y:0.060, gb_h:0.020,
+  f_x:0.020, f_y:0.008, f_h:0.055, f_stroke:0.040
+};
+/* 关节：轴向(z/y)+限位(度)，与 URDF <limit> 一致 */
+const JOINTS = [
+  {name:"joint1", axis:"z", lim:160},
+  {name:"joint2", axis:"y", lim:100},
+  {name:"joint3", axis:"y", lim:120},
+  {name:"joint4", axis:"z", lim:170},
+  {name:"joint5", axis:"y", lim:120},
+  {name:"joint6", axis:"z", lim:170}
+];
+/* SRDF group_state */
+const PRESETS = {
+  up:    [0,0,0,0,0,0],
+  home:  [0,-0.60,1.10,0,-0.50,0],
+  ext:   [0,1.5708,0,0,0,0]
+};
+/* 材料与零件清单由 scripts/gen_viewer_parts.py 从 artifacts/arm6.urdf 生成。
+   原来这里是手抄的 5 种颜色 + 10 行 pushBox/pushCyl —— 造型一改就会悄悄对不上，
+   而对不上的表现是"网页仍然画得很像"，所以改成读 URDF。 */
+/*__PARTS_BEGIN__*/
+// 由 scripts/gen_viewer_parts.py 从 artifacts/arm6.urdf 生成 —— 手改会被下次生成覆盖。
+// 每条 = [帧名, 形状, x,y,z, roll,pitch,yaw, a,b,c, 材料]；b=box(a=sx,sy,sz) c=cyl(a=r,b=L) s=sphere(a=r)
+const MAT = {
+  "aluminium":[0.72,0.73,0.75],
+  "black_rubber":[0.08,0.08,0.08],
+  "dark_grey":[0.25,0.25,0.28],
+  "orange":[0.92,0.45,0.06],
+  "steel":[0.45,0.46,0.48],
+  "tip_red":[0.85,0.1,0.1],
+};
+const PARTS = [
+  ["f0","c",0, 0, 0.005, 0, 0, 0, 0.08, 0.01, 0,"dark_grey"],
+  ["f0","c",0, 0, 0.0195, 0, 0, 0, 0.075, 0.019, 0,"dark_grey"],
+  ["f0","c",0, 0, 0.032, 0, 0, 0, 0.068, 0.006, 0,"steel"],
+  ["f0","c",0.056, 0.056, 0.007, 0, 0, 0, 0.007, 0.014, 0,"aluminium"],
+  ["f0","c",-0.056, 0.056, 0.007, 0, 0, 0, 0.007, 0.014, 0,"aluminium"],
+  ["f0","c",-0.056, -0.056, 0.007, 0, 0, 0, 0.007, 0.014, 0,"aluminium"],
+  ["f0","c",0.056, -0.056, 0.007, 0, 0, 0, 0.007, 0.014, 0,"aluminium"],
+  ["f0","b",-0.07, 0, 0.0195, 0, 0, 0, 0.01, 0.03, 0.02,"steel"],
+  ["f1","c",0, 0, 0.0375, 0, 0, 0, 0.058, 0.075, 0,"steel"],
+  ["f1","c",0, 0, 0.0785, 0, 0, 0, 0.059, 0.007, 0,"dark_grey"],
+  ["f1","c",0, 0, 0.116, 0, 0, 0, 0.05, 0.068, 0,"steel"],
+  ["f1","c",0, 0, 0.175, 0, 0, 0, 0.058, 0.05, 0,"steel"],
+  ["f1","b",0, 0.0375, 0.165, 0, 0, 0, 0.05, 0.012, 0.075,"steel"],
+  ["f1","b",0, -0.0375, 0.165, 0, 0, 0, 0.05, 0.012, 0.075,"steel"],
+  ["f1","c",0, 0.0375, 0.2, -1.570796, 0, 0, 0.02, 0.012, 0,"steel"],
+  ["f1","c",0, -0.0375, 0.2, -1.570796, 0, 0, 0.02, 0.012, 0,"steel"],
+  ["f1","c",0, 0.0455, 0.2, -1.570796, 0, 0, 0.012, 0.004, 0,"dark_grey"],
+  ["f1","c",0, -0.0455, 0.2, -1.570796, 0, 0, 0.012, 0.004, 0,"dark_grey"],
+  ["f1","b",0.057, 0, 0.055, 0, 0, 0, 0.002, 0.024, 0.012,"orange"],
+  ["f2","b",0, 0, 0.12, 0, 0, 0, 0.04, 0.016, 0.19,"orange"],
+  ["f2","b",0, 0.025, 0.12, 0, 0, 0, 0.044, 0.01, 0.196,"orange"],
+  ["f2","b",0, -0.025, 0.12, 0, 0, 0, 0.044, 0.01, 0.196,"orange"],
+  ["f2","c",0, 0, 0, -1.570796, 0, 0, 0.035, 0.058, 0,"steel"],
+  ["f2","c",0, 0, 0.24, -1.570796, 0, 0, 0.035, 0.058, 0,"steel"],
+  ["f2","c",-0.029, 0, 0.12, 0, 0, 0, 0.004, 0.15, 0,"black_rubber"],
+  ["f2","b",-0.027, 0, 0.06, 0, 0, 0, 0.014, 0.01, 0.01,"black_rubber"],
+  ["f2","b",-0.027, 0, 0.12, 0, 0, 0, 0.014, 0.01, 0.01,"black_rubber"],
+  ["f2","b",-0.027, 0, 0.18, 0, 0, 0, 0.014, 0.01, 0.01,"black_rubber"],
+  ["f3","b",0, 0, 0.1, 0, 0, 0, 0.034, 0.014, 0.16,"orange"],
+  ["f3","b",0, 0.0205, 0.1, 0, 0, 0, 0.036, 0.009, 0.166,"orange"],
+  ["f3","b",0, -0.0205, 0.1, 0, 0, 0, 0.036, 0.009, 0.166,"orange"],
+  ["f3","c",0, 0, 0.185, 0, 0, 0, 0.03, 0.03, 0,"steel"],
+  ["f3","c",0, 0, 0.197, 0, 0, 0, 0.03, 0.006, 0,"dark_grey"],
+  ["f3","c",-0.022, 0, 0.1, 0, 0, 0, 0.004, 0.11, 0,"black_rubber"],
+  ["f3","b",-0.021, 0, 0.07, 0, 0, 0, 0.012, 0.009, 0.009,"black_rubber"],
+  ["f3","b",-0.021, 0, 0.13, 0, 0, 0, 0.012, 0.009, 0.009,"black_rubber"],
+  ["f4","c",0, 0, 0.04, 0, 0, 0, 0.038, 0.04, 0,"steel"],
+  ["f4","c",0, 0, 0.008, 0, 0, 0, 0.042, 0.008, 0,"dark_grey"],
+  ["f4","c",0, 0, 0.072, 0, 0, 0, 0.042, 0.008, 0,"dark_grey"],
+  ["f4","c",0, 0, 0.026, 0, 0, 0, 0.0395, 0.005, 0,"black_rubber"],
+  ["f4","c",0, 0, 0.054, 0, 0, 0, 0.0395, 0.005, 0,"black_rubber"],
+  ["f4","c",0.031, 0, 0.076, 0, 0, 0, 0.0035, 0.005, 0,"aluminium"],
+  ["f4","c",0, 0.031, 0.076, 0, 0, 0, 0.0035, 0.005, 0,"aluminium"],
+  ["f4","c",-0.031, 0, 0.076, 0, 0, 0, 0.0035, 0.005, 0,"aluminium"],
+  ["f4","c",0, -0.031, 0.076, 0, 0, 0, 0.0035, 0.005, 0,"aluminium"],
+  ["f5","c",0, 0, 0, -1.570796, 0, 0, 0.027, 0.028, 0,"steel"],
+  ["f5","b",0, 0.018, 0.025, 0, 0, 0, 0.026, 0.008, 0.05,"steel"],
+  ["f5","b",0, -0.018, 0.025, 0, 0, 0, 0.026, 0.008, 0.05,"steel"],
+  ["f5","b",0, 0, 0.036, 0, 0, 0, 0.024, 0.014, 0.048,"aluminium"],
+  ["f5","c",0, 0, 0, -1.570796, 0, 0, 0.009, 0.05, 0,"dark_grey"],
+  ["f5","c",0, 0, 0.056, 0, 0, 0, 0.027, 0.016, 0,"steel"],
+  ["f6","c",0, 0, 0.01, 0, 0, 0, 0.032, 0.02, 0,"dark_grey"],
+  ["f6","c",0, 0, 0.026, 0, 0, 0, 0.036, 0.008, 0,"aluminium"],
+  ["f6","c",0.027, 0, 0.031, 0, 0, 0, 0.003, 0.004, 0,"aluminium"],
+  ["f6","c",0.0135, 0.023383, 0.031, 0, 0, 0, 0.003, 0.004, 0,"aluminium"],
+  ["f6","c",-0.0135, 0.023383, 0.031, 0, 0, 0, 0.003, 0.004, 0,"aluminium"],
+  ["f6","c",-0.027, 0, 0.031, 0, 0, 0, 0.003, 0.004, 0,"aluminium"],
+  ["f6","c",-0.0135, -0.023383, 0.031, 0, 0, 0, 0.003, 0.004, 0,"aluminium"],
+  ["f6","c",0.0135, -0.023383, 0.031, 0, 0, 0, 0.003, 0.004, 0,"aluminium"],
+  ["f6","c",0, 0, 0.0315, 0, 0, 0, 0.008, 0.005, 0,"black_rubber"],
+  ["gb","b",0, 0, 0.008, 0, 0, 0, 0.04, 0.052, 0.016,"dark_grey"],
+  ["gb","b",0, 0, 0.0185, 0, 0, 0, 0.03, 0.044, 0.005,"steel"],
+  ["gb","b",0, 0.02, 0.021, 0, 0, 0, 0.012, 0.006, 0.008,"aluminium"],
+  ["gb","b",0, -0.02, 0.021, 0, 0, 0, 0.012, 0.006, 0.008,"aluminium"],
+  ["fg1","b",0, 0, -0.0175, 0, 0, 0, 0.022, 0.012, 0.02,"steel"],
+  ["fg1","b",0, 0, 0.005, 0, 0, 0, 0.018, 0.007, 0.03,"aluminium"],
+  ["fg1","b",0, -0.004, 0.006, 0, 0, 0, 0.016, 0.006, 0.026,"black_rubber"],
+  ["fg1","b",0, 0, 0.024, 0, 0, 0, 0.014, 0.009, 0.007,"dark_grey"],
+  ["fg2","b",0, 0, -0.0175, 0, 0, 0, 0.022, 0.012, 0.02,"steel"],
+  ["fg2","b",0, 0, 0.005, 0, 0, 0, 0.018, 0.007, 0.03,"aluminium"],
+  ["fg2","b",0, 0.004, 0.006, 0, 0, 0, 0.016, 0.006, 0.026,"black_rubber"],
+  ["fg2","b",0, 0, 0.024, 0, 0, 0, 0.014, 0.009, 0.007,"dark_grey"],
+  ["t0","s",0, 0, 0, 0, 0, 0, 0.004, 0.004, 0.004,"tip_red"],
+];
+/*__PARTS_END__*/
+
+let q = PRESETS.up.slice();      // 6 个臂关节（弧度）
+let qg = P.f_stroke;             // 手指张开量（m）
+
+/* ============ 4x4 齐次变换（列主序嵌套数组，行约定 A[i][j]） ============ */
+const I4 = () => [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
+function mul(A,B){const C=[[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+  for(let i=0;i<4;i++)for(let k=0;k<4;k++){const a=A[i][k];if(!a)continue;
+    for(let j=0;j<4;j++)C[i][j]+=a*B[k][j];}return C;}
+function T(x,y,z){const M=I4();M[0][3]=x;M[1][3]=y;M[2][3]=z;return M;}
+function Rz(a){const c=Math.cos(a),s=Math.sin(a);
+  return [[c,-s,0,0],[s,c,0,0],[0,0,1,0],[0,0,0,1]];}
+function Ry(a){const c=Math.cos(a),s=Math.sin(a);
+  return [[c,0,s,0],[0,1,0,0],[-s,0,c,0],[0,0,0,1]];}
+function xf(M,p){return [
+  M[0][0]*p[0]+M[0][1]*p[1]+M[0][2]*p[2]+M[0][3],
+  M[1][0]*p[0]+M[1][1]*p[1]+M[1][2]*p[2]+M[1][3],
+  M[2][0]*p[0]+M[2][1]*p[1]+M[2][2]*p[2]+M[2][3]];}
+
+/* ============ 正运动学：与 URDF 关节原点/轴向逐一对应 ============ */
+function fk(){
+  const f = [];
+  let A = I4();                                        // base_link（世界系原地）
+  f.push(A);                                           // 0 base
+  A = mul(mul(A,T(0,0,P.base_h)),Rz(q[0])); f.push(A); // 1 j1
+  A = mul(mul(A,T(0,0,P.l1)),Ry(q[1]));     f.push(A); // 2 j2
+  A = mul(mul(A,T(0,0,P.l2)),Ry(q[2]));     f.push(A); // 3 j3
+  A = mul(mul(A,T(0,0,P.l3)),Rz(q[3]));     f.push(A); // 4 j4
+  A = mul(mul(A,T(0,0,P.l4)),Ry(q[4]));     f.push(A); // 5 j5
+  A = mul(mul(A,T(0,0,P.l5)),Rz(q[5]));     f.push(A); // 6 j6
+  const gb = mul(A,T(0,0,P.l6));                       // gripper_base（fixed）
+  const f1 = mul(gb, mul(T(0, P.gb_y/2+P.f_y/2, P.gb_h+P.f_h/2), T(0,qg,0)));
+  const f2 = mul(gb, mul(T(0,-(P.gb_y/2+P.f_y/2), P.gb_h+P.f_h/2), T(0,-qg,0)));
+  const t0 = mul(gb,T(0,0,P.gb_h+P.f_h));              // tool0 = 指尖抓取中心
+  return {f,gb,f1,f2,t0};
+}
+
+/* 理论最大前伸：把 extended 位形喂给**同一套**正运动学，量 tool0 到基座轴线的水平距离。
+   原来这里引用了一个从未定义的 REACH —— draw() 一跑就 ReferenceError、画面整片空白；
+   而 HUD 里那个 "0.705" 是手抄的。两个都是"坏在没人看的地方"，现在都由 FK 现算。 */
+function reachOf(preset){
+  const save=q; q=preset.slice();
+  const M=fk().t0; const r=Math.hypot(M[0][3],M[1][3]);
+  q=save; return r;
+}
+const REACH=reachOf(PRESETS.ext);
+
+/* ============ 几何体 → 世界系三角形 ============ */
+function pushBox(tris,M,sx,sy,sz,c,ox,oy,oz){
+  const h=[sx/2,sy/2,sz/2], col=MAT[c];
+  const v=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]]
+    .map(p=>xf(M,[p[0]*h[0]+ox,p[1]*h[1]+oy,p[2]*h[2]+oz]));
+  const faces=[[4,5,6],[4,6,7],[0,3,2],[0,2,1],[1,2,6],[1,6,5],[0,1,5],[0,5,4],[3,7,6],[3,6,2],[0,4,7],[0,7,3]];
+  for(const t of faces) tris.push({p:[v[t[0]],v[t[1]],v[t[2]]],c:col});
+}
+function pushCyl(tris,M,r,L,c,oz,seg=18){
+  const col=MAT[c], top=[], bot=[];
+  for(let i=0;i<seg;i++){const a=2*Math.PI*i/seg;
+    top.push(xf(M,[r*Math.cos(a),r*Math.sin(a),oz+L/2]));
+    bot.push(xf(M,[r*Math.cos(a),r*Math.sin(a),oz-L/2]));}
+  for(let i=0;i<seg;i++){const j=(i+1)%seg;
+    tris.push({p:[bot[i],top[i],top[j]],c:col});
+    tris.push({p:[bot[i],top[j],bot[j]],c:col});
+    tris.push({p:[top[i],top[j],xf(M,[0,0,oz+L/2])],c:col});
+    tris.push({p:[bot[j],bot[i],xf(M,[0,0,oz-L/2])],c:col});}
+}
+
+function pushSph(tris,M,r,c,seg=8){
+  const col=MAT[c], n=seg*2;
+  for(let i=0;i<seg;i++){const t0=Math.PI*i/seg-Math.PI/2, t1=Math.PI*(i+1)/seg-Math.PI/2;
+    for(let j=0;j<n;j++){const p0=2*Math.PI*j/n, p1=2*Math.PI*(j+1)/n;
+      const ring=(t,pp)=>xf(M,[r*Math.cos(t)*Math.cos(pp),r*Math.cos(t)*Math.sin(pp),r*Math.sin(t)]);
+      tris.push({p:[ring(t0,p0),ring(t1,p0),ring(t1,p1)],c:col});
+      tris.push({p:[ring(t0,p0),ring(t1,p1),ring(t0,p1)],c:col});}}
+}
+
+/* URDF 的 rpy = 固定角 XYZ 外旋：R = Rz(yaw)·Ry(pitch)·Rx(roll) */
+function Rrpy(rx,ry,rz){
+  const cx=Math.cos(rx),sx=Math.sin(rx),cy=Math.cos(ry),sy=Math.sin(ry),cz=Math.cos(rz),sz=Math.sin(rz);
+  return [[cz*cy, cz*sy*sx-sz*cx, cz*sy*cx+sz*sx, 0],
+          [sz*cy, sz*sy*sx+cz*cx, sz*sy*cx-cz*sx, 0],
+          [-sy,   cy*sx,          cy*cx,          0],
+          [0,0,0,1]];}
+
+function buildTris(){
+  const tris=[], S=fk();
+  const FR={f0:S.f[0],f1:S.f[1],f2:S.f[2],f3:S.f[3],f4:S.f[4],f5:S.f[5],f6:S.f[6],
+            gb:S.gb,fg1:S.f1,fg2:S.f2,t0:S.t0};
+  for(const p of PARTS){
+    const M=mul(mul(FR[p[0]],T(p[2],p[3],p[4])),Rrpy(p[5],p[6],p[7]));
+    if(p[1]==="b")      pushBox(tris,M,p[8],p[9],p[10],p[11],0,0,0);
+    else if(p[1]==="c") pushCyl(tris,M,p[8],p[9],p[11],0);
+    else                pushSph(tris,M,p[8],p[11]);
+  }
+  return tris;
+}
+
+/* ============ 相机 + 绘制 ============ */
+const cv=document.getElementById("c"), ctx=cv.getContext("2d");
+let yaw=-0.9, pitch=0.35, dist=1.5, target=[0.12,0,0.30];
+const LIGHT=(()=>{const l=[0.45,0.35,0.9];const n=Math.hypot(...l);return l.map(x=>x/n);})();
+
+function resize(){const d=window.devicePixelRatio||1;
+  cv.width=innerWidth*d;cv.height=innerHeight*d;ctx.setTransform(d,0,0,d,0,0);}
+addEventListener("resize",resize);resize();
+
+function camBasis(){
+  const cp=Math.cos(pitch),sp=Math.sin(pitch),cy=Math.cos(yaw),sy=Math.sin(yaw);
+  const eye=[target[0]+dist*cp*cy,target[1]+dist*cp*sy,target[2]+dist*sp];
+  let fz=[target[0]-eye[0],target[1]-eye[1],target[2]-eye[2]];
+  const n=Math.hypot(...fz);fz=fz.map(x=>x/n);
+  let up=[0,0,1];
+  // sy 改名 sy2：上面那行 const 已经占用了 sy，同名 let 声明是**整段脚本不执行**级别的
+  // 语法错（不是运行时错，控制台只报一次，画面就是一片空白 —— 本次改造前它就在那儿）。
+  let sx=fz[1]*up[2]-fz[2]*up[1], sy2=fz[2]*up[0]-fz[0]*up[2], sz2=fz[0]*up[1]-fz[1]*up[0];
+  const sn=Math.hypot(sx,sy2,sz2)||1;const s=[sx/sn,sy2/sn,sz2/sn];
+  const u=[s[1]*fz[2]-s[2]*fz[1],s[2]*fz[0]-s[0]*fz[2],s[0]*fz[1]-s[1]*fz[0]];
+  return {eye,f:fz,s,u};
+}
+function draw(){
+  const W=innerWidth,H=innerHeight,focal=H*1.15;
+  ctx.clearRect(0,0,W,H);
+  const {eye,f,s,u}=camBasis();
+  /* 约定：toCam 返回 [右, 深度, 上]，深度 = d·f（f 是从眼睛指向 target 的单位向量，
+     所以"镜头前方"必须是**正**数）。
+     原来这里返回 [右, 上, 深度]，而下面的近裁剪 `p[1]<0.05` 与画家算法的 depth 全把
+     c[1] 当深度用 —— 两套约定对不上，表现是"相机水平线以下的面被整批剔掉 +
+     剩下的按高度排序乱叠"。另外那个 -(d·f) 的负号是 OpenGL 相机轴向的残留，
+     在这套写法下会让前方深度全变负，一并去掉。 */
+  const toCam=p=>{const d=[p[0]-eye[0],p[1]-eye[1],p[2]-eye[2]];
+    return [d[0]*s[0]+d[1]*s[1]+d[2]*s[2],
+            d[0]*f[0]+d[1]*f[1]+d[2]*f[2],
+            d[0]*u[0]+d[1]*u[1]+d[2]*u[2]];};
+  const proj=c=>[W/2+c[0]*focal/c[1],H/2-c[2]*focal/c[1]];
+
+  /* 地面网格（z=0） */
+  ctx.strokeStyle="#232a33";ctx.lineWidth=1;
+  for(let g=-0.8;g<=0.801;g+=0.1){
+    for(const seg of [[[g,-0.8,0],[g,0.8,0]],[[-0.8,g,0],[0.8,g,0]]]){
+      const a=toCam(seg[0]),b=toCam(seg[1]);
+      if(a[1]<0.05||b[1]<0.05)continue;
+      const pa=proj(a),pb=proj(b);
+      ctx.beginPath();ctx.moveTo(pa[0],pa[1]);ctx.lineTo(pb[0],pb[1]);ctx.stroke();}}
+  /* 最大前伸参考圈（extended 位形 tool0 的 FK 计算半径） */
+  ctx.strokeStyle="#3a4a5a";ctx.setLineDash([4,5]);ctx.beginPath();
+  for(let i=0;i<=64;i++){const a=2*Math.PI*i/64;
+    const pc=proj(toCam([REACH*Math.cos(a),REACH*Math.sin(a),0]));
+    i?ctx.lineTo(pc[0],pc[1]):ctx.moveTo(pc[0],pc[1]);}
+  ctx.stroke();ctx.setLineDash([]);
+
+  /* 三角面：背面剔除 + 画家算法 + Lambert */
+  const tris=buildTris();
+  const drawn=[];
+  for(const t of tris){
+    const c=t.p, mid=[(c[0][0]+c[1][0]+c[2][0])/3,(c[0][1]+c[1][1]+c[2][1])/3,(c[0][2]+c[1][2]+c[2][2])/3];
+    const e1=[c[1][0]-c[0][0],c[1][1]-c[0][1],c[1][2]-c[0][2]];
+    const e2=[c[2][0]-c[0][0],c[2][1]-c[0][1],c[2][2]-c[0][2]];
+    let nrm=[e1[1]*e2[2]-e1[2]*e2[1],e1[2]*e2[0]-e1[0]*e2[2],e1[0]*e2[1]-e1[1]*e2[0]];
+    const nn=Math.hypot(...nrm)||1;nrm=nrm.map(x=>x/nn);
+    const view=[eye[0]-mid[0],eye[1]-mid[1],eye[2]-mid[2]];
+    if(nrm[0]*view[0]+nrm[1]*view[1]+nrm[2]*view[2]<=0)continue;   // 背面
+    const cc=c.map(toCam);
+    if(cc.some(p=>p[1]<0.05))continue;
+    const depth=(cc[0][1]+cc[1][1]+cc[2][1])/3;
+    const shade=0.32+0.68*Math.max(0,nrm[0]*LIGHT[0]+nrm[1]*LIGHT[1]+nrm[2]*LIGHT[2]);
+    drawn.push({pt:cc.map(proj),d:depth,
+      col:t.c.map(x=>Math.round(255*Math.min(1,x*shade)))});
+  }
+  drawn.sort((a,b)=>b.d-a.d);
+  for(const t of drawn){
+    ctx.beginPath();ctx.moveTo(t.pt[0][0],t.pt[0][1]);
+    ctx.lineTo(t.pt[1][0],t.pt[1][1]);ctx.lineTo(t.pt[2][0],t.pt[2][1]);ctx.closePath();
+    ctx.fillStyle=`rgb(${t.col[0]},${t.col[1]},${t.col[2]})`;
+    ctx.strokeStyle=`rgb(${t.col[0]},${t.col[1]},${t.col[2]})`;ctx.fill();ctx.stroke();
+  }
+  /* tool0：指尖抓取中心（红点） */
+  const tc=toCam(fk().t0.slice? [fk().t0[0][3],fk().t0[1][3],fk().t0[2][3]] : fk().t0);
+  if(tc[1]>0.05){const p=proj(tc);
+    ctx.fillStyle="#e02020";ctx.beginPath();ctx.arc(p[0],p[1],5,0,7);ctx.fill();
+    ctx.strokeStyle="#e02020";ctx.beginPath();
+    ctx.arc(p[0],p[1],9,0,7);ctx.stroke();}
+}
+
+/* ============ UI ============ */
+const box=document.getElementById("sliders");
+JOINTS.forEach((j,i)=>{
+  const row=document.createElement("div");row.className="jrow";
+  row.innerHTML=`<label>${j.name}<br><span style="color:#5d6773;font-size:10px">轴 ${j.axis} ±${j.lim}°</span></label>
+    <input type="range" min="${-j.lim}" max="${j.lim}" step="0.5" value="0" id="s${i}">
+    <output id="o${i}">0°</output>`;
+  box.appendChild(row);
+  row.querySelector("input").addEventListener("input",e=>{
+    q[i]=e.target.value*Math.PI/180;
+    document.getElementById("o"+i).textContent=e.target.value+"°";
+    presetOff();sync();});
+});
+const gRow=document.createElement("div");gRow.className="jrow";
+gRow.innerHTML=`<label>夹爪<br><span style="color:#5d6773;font-size:10px">行程 0~40mm</span></label>
+  <input type="range" min="0" max="40" step="1" value="40" id="sg">
+  <output id="og">40mm</output>`;
+box.appendChild(gRow);
+gRow.querySelector("input").addEventListener("input",e=>{
+  qg=e.target.value/1000;document.getElementById("og").textContent=e.target.value+"mm";sync();});
+
+function setPreset(name){q=PRESETS[name].slice();
+  q.forEach((v,i)=>{const s=document.getElementById("s"+i);s.value=(v*180/Math.PI).toFixed(1);
+    document.getElementById("o"+i).textContent=s.value+"°";});
+  document.querySelectorAll(".btns button").forEach(b=>b.classList.remove("on"));
+  document.getElementById("p_"+name).classList.add("on");sync();}
+function presetOff(){document.querySelectorAll("#p_up,#p_home,#p_ext").forEach(b=>b.classList.remove("on"));}
+document.getElementById("p_up").onclick=()=>setPreset("up");
+document.getElementById("p_home").onclick=()=>setPreset("home");
+document.getElementById("p_ext").onclick=()=>setPreset("ext");
+document.getElementById("g_open").onclick=()=>{qg=P.f_stroke;
+  document.getElementById("sg").value=40;document.getElementById("og").textContent="40mm";sync();};
+document.getElementById("g_closed").onclick=()=>{qg=0;
+  document.getElementById("sg").value=0;document.getElementById("og").textContent="0mm";sync();};
+
+const hud=document.getElementById("hud");
+function sync(){
+  const K=fk(), t=K.t0;
+  const xyz=[t[0][3],t[1][3],t[2][3]];
+  const r=Math.hypot(xyz[0],xyz[1]);
+  hud.innerHTML=`tool0（指尖抓取中心） x=<b>${xyz[0].toFixed(3)}</b> y=<b>${xyz[1].toFixed(3)}</b> z=<b>${xyz[2].toFixed(3)}</b> m<br>
+    水平伸展半径 <b>${r.toFixed(3)}</b> m ｜ 理论最大前伸 <b>${REACH.toFixed(3)}</b> m（extended 位形沿基座 +x）`;
+  draw();
+}
+
+/* 拖动旋转 / 滚轮缩放 */
+let drag=null;
+cv.addEventListener("pointerdown",e=>{drag=[e.clientX,e.clientY];cv.style.cursor="grabbing";});
+addEventListener("pointerup",()=>{drag=null;cv.style.cursor="grab";});
+addEventListener("pointermove",e=>{if(!drag)return;
+  yaw-=(e.clientX-drag[0])*0.008;pitch+=(e.clientY-drag[1])*0.008;
+  pitch=Math.max(-0.1,Math.min(1.4,pitch));drag=[e.clientX,e.clientY];draw();});
+cv.addEventListener("wheel",e=>{e.preventDefault();
+  dist*=1+Math.sign(e.deltaY)*0.08;dist=Math.max(0.4,Math.min(4,dist));draw();},{passive:false});
+
+setPreset("up");
+document.getElementById("p_up").classList.add("on");
+</script>
+</body>
+</html>

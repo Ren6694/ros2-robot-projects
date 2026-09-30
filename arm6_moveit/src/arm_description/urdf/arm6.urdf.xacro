@@ -1,0 +1,437 @@
+<?xml version="1.0"?>
+<!--
+  ============================================================================
+   arm6.urdf.xacro —— 6 自由度机械臂 + 二指平行夹爪
+  ============================================================================
+   结构（串联链）：
+     base_link ─joint1(z)→ link1 ─joint2(y)→ link2 ─joint3(y)→ link3
+               ─joint4(z)→ link4 ─joint5(y)→ link5 ─joint6(z)→ link6
+               ─(fixed)→ gripper_base ─finger1_joint(+y)→ finger1_link
+                                     └─finger2_joint(-y)→ finger2_link
+                                     └─(fixed)→ tool0
+
+   为什么是 6 自由度 + 2 指而不是 7 或 4：
+     6 是"末端任意位姿无约束"的最小自由度（3 位置 + 3 姿态），也是工业六轴
+     关节机器人（UR/KUKA/EPSON 类）的通用构型 —— 用它验证 MoveIt2 的 IK、
+     碰撞检测、路径规划能覆盖真实项目的全部难点；4 自由度会退化出大量奇异，
+     7 自由度则引入冗余解歧义，反而看不清规划器本身的行为。
+     夹爪用 2 个独立 prismatic 关节而不是 1 个 + mimic：mimic 关节在
+     ros2_control 的 mock 硬件与 JTC 里支持不完整（需要额外插件），
+     用两个真关节多花 2 维状态，换来"整条链路零特例"。
+
+   坐标系约定（和 SRDF/MoveIt 保持一致，改之前先读这段）：
+     + 根 link base_link 的原点在地面（z=0），所以 base_link 的几何体向 +z 伸出。
+     + 每个运动 link 的原点 **与该关节的旋转/平移轴重合**，几何体向 +z 伸出，
+       因此惯量宏要用 com_z=L/2 + 平行轴定理（见 inertial_macros.xacro）。
+     + 关节轴向：1/4/6 绕 z（腰、腕滚、腕摆），2/3/5 绕 y（肩、肘、腕俯仰）。
+       零位 = 全 0 = 手臂竖直向上伸直，这是 SRDF 里 "up" 状态，也是唯一
+       保证各 link 互不相碰的姿态，所以 URDF 的 limits 中点都取 0。
+  ============================================================================
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="arm6">
+
+  <xacro:include filename="$(find arm_description)/urdf/inertial_macros.xacro"/>
+  <xacro:include filename="$(find arm_description)/urdf/arm6.ros2_control.xacro"/>
+
+  <!-- ===================== 几何参数（改这里就能整体缩放） =================
+       命名规则：lN = 第 N 段沿自身 +z 的长度；r = 半径；w/d/h = 盒子的 x/y/z。
+       质量按"教学级铝制桌面臂"估：全臂 11 个 link 相加 = 4.646 kg
+       （base 1.80 / link1 0.95 / link2 0.70 / link3 0.45 / link4 0.25 /
+         link5 0.18 / link6 0.12 / 夹爪座 0.10 / 两指 0.045x2 / tool0 0.001），
+       底座配重占 39 %、前四段占 81 % —— 基座力矩主要由前四段决定，和真实机械臂一致。
+       越靠近末端越轻是刻意的：腕部电机小、惯量小，才敢给 joint4..6 更高的角速度。 -->
+  <xacro:property name="base_r"  value="0.075"/>
+  <xacro:property name="base_h"  value="0.035"/>
+  <xacro:property name="l1"      value="0.200"/>
+  <xacro:property name="r1"      value="0.055"/>
+  <xacro:property name="l2"      value="0.240"/>
+  <xacro:property name="w2"      value="0.060"/>
+  <xacro:property name="l3"      value="0.200"/>
+  <xacro:property name="w3"      value="0.050"/>
+  <xacro:property name="l4"      value="0.080"/>
+  <xacro:property name="r4"      value="0.038"/>
+  <xacro:property name="l5"      value="0.060"/>
+  <xacro:property name="w5"      value="0.045"/>
+  <xacro:property name="l6"      value="0.030"/>
+  <xacro:property name="r6"      value="0.032"/>
+
+  <!-- 夹爪 -->
+  <xacro:property name="gb_x"    value="0.045"/>   <!-- 夹爪座厚度(x) -->
+  <xacro:property name="gb_y"    value="0.060"/>   <!-- 开合方向总宽(y) -->
+  <xacro:property name="gb_h"    value="0.020"/>
+  <xacro:property name="f_x"     value="0.020"/>   <!-- 指片 x -->
+  <xacro:property name="f_y"     value="0.008"/>   <!-- 指片厚度(沿开合方向) -->
+  <xacro:property name="f_h"     value="0.055"/>   <!-- 指片高度 -->
+  <xacro:property name="f_stroke" value="0.040"/>  <!-- 单指行程 = 开口增量 -->
+
+  <!-- ===================== 造型专用参数（只喂 <visual>） ===================
+       collision / inertial / limit 一律不读这一组，所以改它们**不会**动到
+       MoveIt 的规划、碰撞矩阵与 08 篇里任何计时数字 —— 这条边界由
+       scripts/check_visual_envelope.py 和 <collision> 逐字 diff 一起守住。
+       间隙 1.5 mm 是"装配缝"：两片颊板夹毂时留一道能看见的缝，比严丝合缝更像真机。 -->
+  <xacro:property name="yoke_t"   value="0.012"/>              <!-- 颊板厚 -->
+  <xacro:property name="fit_gap"  value="0.0015"/>             <!-- 颊板内面 ↔ 臂段毂 的缝 -->
+  <xacro:property name="yoke_y"   value="${w2/2 + fit_gap + yoke_t/2}"/>  <!-- 颊板中心 y -->
+  <xacro:property name="hub2_len" value="${2*(w2/2-0.001)}"/>           <!-- link2 俯仰毂长(沿 y)，端面离颊板留 2.5 mm 缝 -->
+
+  <!-- ===================== 材料（rviz 显示用，不影响物理） ================= -->
+  <material name="dark_grey"><color rgba="0.25 0.25 0.28 1.0"/></material>
+  <material name="aluminium"><color rgba="0.72 0.73 0.75 1.0"/></material>
+  <material name="orange"><color rgba="0.92 0.45 0.06 1.0"/></material>
+  <material name="black_rubber"><color rgba="0.08 0.08 0.08 1.0"/></material>
+  <material name="tip_red"><color rgba="0.85 0.10 0.10 1.0"/></material>
+  <!-- 壳体灰：介于 aluminium 与 dark_grey 之间，用来把"铸件外壳"和"加工面/法兰"分开。
+       真机一眼能认出关节，靠的就是这种分色，而不是靠形状。 -->
+  <material name="steel"><color rgba="0.45 0.46 0.48 1.0"/></material>
+
+  <!-- ===================== visual 零件宏 =====================
+       只有 <visual>，不碰 <collision> 与 <inertial>。一个 link 里可以放任意多个
+       <visual>（URDF 规范允许），所以"造型"= 零件清单，而不是一个几何体。
+
+       三条写死的规矩（改任何一条都要重跑 scripts/check_visual_envelope.py）：
+         1) 侧向（link 自身 x/y）外扩 ≤ 6 mm：侧向才是"看着穿模、规划说不碰"的方向；
+         2) 远端（+z 方向）外扩 ≤ 6 mm：末端法兰多出的几毫米会真的影响抓取位；
+         3) 近端（-z 方向）允许伸到"毂的半径"：俯仰毂本来就是**绕着自己的轴**画的，
+            往轴后面凸出一截是几何必然，不是外扩。
+       零件一律用 link 自身坐标系给坐标，零位 = 全 0 = 直臂朝天（见文件头约定）。 -->
+
+  <!-- 沿 link 自身 z 的圆柱：滚转轴零件（腰、腕滚、法兰） -->
+  <xacro:macro name="vz_cyl" params="r l z x:=0 y:=0 mat:=steel">
+    <visual>
+      <origin xyz="${x} ${y} ${z}" rpy="0 0 0"/>
+      <geometry><cylinder radius="${r}" length="${l}"/></geometry>
+      <material name="${mat}"/>
+    </visual>
+  </xacro:macro>
+
+  <!-- 沿 link 自身 y 的圆柱：俯仰轴零件（肩、肘、腕俯仰的毂与轴帽）。
+       URDF 的 cylinder 轴恒为自身 +z，所以绕 x 转 -90° 把 +z 转到 +y。 -->
+  <xacro:macro name="vy_cyl" params="r l z x:=0 y:=0 mat:=steel">
+    <visual>
+      <origin xyz="${x} ${y} ${z}" rpy="${-pi/2} 0 0"/>
+      <geometry><cylinder radius="${r}" length="${l}"/></geometry>
+      <material name="${mat}"/>
+    </visual>
+  </xacro:macro>
+
+  <xacro:macro name="v_box" params="sx sy sz x y z mat:=steel">
+    <visual>
+      <origin xyz="${x} ${y} ${z}" rpy="0 0 0"/>
+      <geometry><box size="${sx} ${sy} ${sz}"/></geometry>
+      <material name="${mat}"/>
+    </visual>
+  </xacro:macro>
+
+  <!-- 一圈螺栓头：调用方逐颗给角度（xacro 没有循环，但有 cos/sin） -->
+  <xacro:macro name="v_bolt" params="ang rad z r:=0.003 h:=0.005 mat:=aluminium">
+    <visual>
+      <origin xyz="${rad*cos(ang)} ${rad*sin(ang)} ${z}" rpy="0 0 0"/>
+      <geometry><cylinder radius="${r}" length="${h}"/></geometry>
+      <material name="${mat}"/>
+    </visual>
+  </xacro:macro>
+
+  <!-- 一指 = 指座(靠掌心) + 指骨 + 内侧橡胶垫 + 指尖。
+       inner = 指向"另一根手指"那一侧的单位符号（finger1 在 +y 故 inner=-1）。
+       ★ 四件加起来必须正好填满 [-f_h/2, +f_h/2]：指尖平面就是 tool0 的高度
+         （gb_h + f_h），多出一毫米都会让"规划到的位置"和"看着夹住的位置"错开。 -->
+  <xacro:macro name="finger_visual" params="inner">
+    <xacro:v_box sx="${f_x+0.002}" sy="${f_y+0.004}" sz="0.020" x="0" y="0" z="${-f_h/2+0.010}" mat="steel"/>
+    <xacro:v_box sx="${f_x-0.002}" sy="${f_y-0.001}" sz="0.030" x="0" y="0" z="0.005" mat="aluminium"/>
+    <xacro:v_box sx="0.016" sy="0.006" sz="0.026" x="0" y="${inner*0.004}" z="0.006" mat="black_rubber"/>
+    <xacro:v_box sx="0.014" sy="${f_y+0.001}" sz="0.007" x="0" y="0" z="${f_h/2-0.0035}" mat="dark_grey"/>
+  </xacro:macro>
+
+  <!-- ============================ world（dummy 根） =======================
+       实测必须加的一层：KDL 不允许**根 link 带惯量**，而 base_link 是底座、
+       必须有质量（MoveIt 的质心/力矩估算要用）。直接把 base_link 的 <inertial>
+       删掉虽然也能消警告，但代价更大：整臂就没有根质量了。
+       标准做法是加一个无几何、无惯量的 dummy 根 `world`，用 fixed joint 连下去。
+       附带收益：TF 树里天然有 world 帧，规划场景里放桌面/料盒时直接用它当参考，
+       SRDF 也就不再需要 <virtual_joint>（否则帧名与这个 link 撞车）。 -->
+  <link name="world"/>
+
+  <joint name="world_joint" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ============================ base_link ============================== -->
+  <link name="base_link">
+    <!-- 底座：底板法兰 + 主体 + 分色顶盖 + 4 颗地脚螺栓 +  rear 接线盒。
+         顶盖直径刻意比主体小 7 mm，做出"铸件上面再压一片加工盖"的台阶感。 -->
+    <xacro:vz_cyl r="${base_r+0.005}" l="0.010"  z="0.005"   mat="dark_grey"/>
+    <xacro:vz_cyl r="${base_r}"       l="0.019"  z="0.0195"  mat="dark_grey"/>
+    <xacro:vz_cyl r="0.068"           l="0.006"  z="0.032"   mat="steel"/>
+    <xacro:vz_cyl r="0.007"           l="0.014"  z="0.007" x="0.056"  y="0.056"  mat="aluminium"/>
+    <xacro:vz_cyl r="0.007"           l="0.014"  z="0.007" x="-0.056" y="0.056"  mat="aluminium"/>
+    <xacro:vz_cyl r="0.007"           l="0.014"  z="0.007" x="-0.056" y="-0.056" mat="aluminium"/>
+    <xacro:vz_cyl r="0.007"           l="0.014"  z="0.007" x="0.056"  y="-0.056" mat="aluminium"/>
+    <xacro:v_box  sx="0.010" sy="0.030" sz="0.020" x="-0.070" y="0" z="0.0195" mat="steel"/>
+    <collision>
+      <origin xyz="0 0 ${base_h/2}" rpy="0 0 0"/>
+      <geometry><cylinder radius="${base_r}" length="${base_h}"/></geometry>
+    </collision>
+    <xacro:cylinder_inertial radius="${base_r}" length="${base_h}" mass="1.80" com_z="${base_h/2}"/>
+  </link>
+
+  <!-- ============================ joint1 / link1 ==========================
+       腰部回转。effort/velocity 是 MoveIt 时间参数化（TOTG）的硬约束，
+       没有它们规划器只能给几何路径、给不出时间轴，execute() 会直接报错。 -->
+  <joint name="joint1" type="revolute">
+    <parent link="base_link"/>
+    <child link="link1"/>
+    <origin xyz="0 0 ${base_h}" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${-pi*160/180}" upper="${pi*160/180}" velocity="3.14" effort="60.0"/>
+    <dynamics damping="0.30" friction="0.10"/>
+  </joint>
+  <link name="link1">
+    <!-- 腰段：三段阶梯壳体（比 collision 粗 3~4 mm，做出铸件的鼓形）+ 一道分色环带，
+         顶部两片**颊板**夹住 joint2 的 y 轴 —— 俯仰关节一律是"两块板夹一个轴"，
+         少了这两片板，肩关节看着就还是一根柱子顶一个方块。 -->
+    <xacro:vz_cyl r="${r1+0.003}" l="0.075" z="${0.0375}"      mat="steel"/>
+    <xacro:vz_cyl r="${r1+0.004}" l="0.007" z="${0.0785}"      mat="dark_grey"/>
+    <xacro:vz_cyl r="0.050"       l="0.068" z="${0.116}"       mat="steel"/>
+    <xacro:vz_cyl r="${r1+0.003}" l="0.050" z="${l1-0.025}"    mat="steel"/>
+    <xacro:v_box  sx="0.050" sy="0.012" sz="0.075" x="0" y="${ yoke_y}"  z="${l1-0.035}" mat="steel"/>
+    <xacro:v_box  sx="0.050" sy="0.012" sz="0.075" x="0" y="${-yoke_y}"  z="${l1-0.035}" mat="steel"/>
+    <xacro:vy_cyl r="0.020" l="0.012" y="${ yoke_y}"  z="${l1}" mat="steel"/>
+    <xacro:vy_cyl r="0.020" l="0.012" y="${-yoke_y}"  z="${l1}" mat="steel"/>
+    <!-- 轴端螺栓帽放在**颊板外侧面**（link1 的 collision 是 r=55 的圆柱，装得下），
+         不放臂段上：臂段 collision 半宽只有 30 mm，压一颗轴帽就侧向外扩 13 mm，
+         那是"看着穿模、规划说不碰"的典型。 -->
+    <xacro:vy_cyl r="0.012" l="0.004" y="${ yoke_y+yoke_t/2+0.002}"  z="${l1}" mat="dark_grey"/>
+    <xacro:vy_cyl r="0.012" l="0.004" y="${-(yoke_y+yoke_t/2+0.002)}" z="${l1}" mat="dark_grey"/>
+    <xacro:v_box  sx="0.002" sy="0.024" sz="0.012" x="${r1+0.002}" y="0" z="0.055" mat="orange"/>
+    <collision>
+      <origin xyz="0 0 ${l1/2}" rpy="0 0 0"/>
+      <geometry><cylinder radius="${r1}" length="${l1}"/></geometry>
+    </collision>
+    <xacro:cylinder_inertial radius="${r1}" length="${l1}" mass="0.95" com_z="${l1/2}"/>
+  </link>
+
+  <!-- ============================ joint2 / link2 ==========================
+       肩关节。这里 rpy 不变换，轴就是 link1 的 +y（= 世界 y，因为 joint1 只绕 z）。 -->
+  <joint name="joint2" type="revolute">
+    <parent link="link1"/>
+    <child link="link2"/>
+    <origin xyz="0 0 ${l1}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="${-pi*100/180}" upper="${pi*100/180}" velocity="3.14" effort="60.0"/>
+    <dynamics damping="0.25" friction="0.08"/>
+  </joint>
+  <link name="link2">
+    <!-- 大臂：实心方盒 → "薄腹板 + 两侧盖板 + 两端俯仰毂"。
+         侧盖板外表面正好落在 collision 半宽上（±30 mm），毂的半径只比 collision
+         多 5 mm，所以整段看起来比原来的方盒"瘦"、但关节处鼓出来 —— 真机就是这个比例。 -->
+    <xacro:v_box  sx="${w2-0.020}" sy="0.016"  sz="${l2-0.050}" x="0" y="0" z="${l2/2}" mat="orange"/>
+    <xacro:v_box  sx="${w2-0.016}" sy="0.010"  sz="${l2-0.044}" x="0" y="${ w2/2-0.005}" z="${l2/2}" mat="orange"/>
+    <xacro:v_box  sx="${w2-0.016}" sy="0.010"  sz="${l2-0.044}" x="0" y="${-(w2/2-0.005)}" z="${l2/2}" mat="orange"/>
+    <xacro:vy_cyl r="${w2/2+0.005}" l="${hub2_len}" z="0"    mat="steel"/>
+    <xacro:vy_cyl r="${w2/2+0.005}" l="${hub2_len}" z="${l2}" mat="steel"/>
+    <!-- 后侧走线：一根波纹管 + 三道线夹。走线永远在"背向工作空间"那一侧(-x)。 -->
+    <xacro:vz_cyl r="0.004" l="${l2-0.090}" x="${-(w2/2-0.001)}" y="0" z="${l2/2}" mat="black_rubber"/>
+    <xacro:v_box  sx="0.014" sy="0.010" sz="0.010" x="${-(w2/2-0.003)}" y="0" z="0.060" mat="black_rubber"/>
+    <xacro:v_box  sx="0.014" sy="0.010" sz="0.010" x="${-(w2/2-0.003)}" y="0" z="0.120" mat="black_rubber"/>
+    <xacro:v_box  sx="0.014" sy="0.010" sz="0.010" x="${-(w2/2-0.003)}" y="0" z="0.180" mat="black_rubber"/>
+    <collision>
+      <origin xyz="0 0 ${l2/2}" rpy="0 0 0"/>
+      <geometry><box size="${w2} ${w2} ${l2}"/></geometry>
+    </collision>
+    <xacro:box_inertial x="${w2}" y="${w2}" z="${l2}" mass="0.70" com_z="${l2/2}"/>
+  </link>
+
+  <!-- ============================ joint3 / link3 ========================== -->
+  <joint name="joint3" type="revolute">
+    <parent link="link2"/>
+    <child link="link3"/>
+    <origin xyz="0 0 ${l2}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="${-pi*120/180}" upper="${pi*120/180}" velocity="3.14" effort="30.0"/>
+    <dynamics damping="0.20" friction="0.06"/>
+  </joint>
+  <link name="link3">
+    <!-- 小臂：与大臂同一套语汇（腹板 + 侧盖板 + 毂），但整体缩一档。
+         远端 joint4 是**滚**轴（沿 z），所以那里画的是鼓而不是圆盘。 -->
+    <xacro:v_box  sx="${w3-0.016}" sy="0.014"  sz="${l3-0.040}" x="0" y="0" z="${l3/2}" mat="orange"/>
+    <xacro:v_box  sx="${w3-0.014}" sy="0.009"  sz="${l3-0.034}" x="0" y="${ w3/2-0.0045}" z="${l3/2}" mat="orange"/>
+    <xacro:v_box  sx="${w3-0.014}" sy="0.009"  sz="${l3-0.034}" x="0" y="${-(w3/2-0.0045)}" z="${l3/2}" mat="orange"/>
+    <!-- 肘关节的圆盘由 link2 远端那个毂画（同轴、半径更大、更宽，画在这儿会被整个包住
+         看不见）—— 同轴的两个 link 只留一个画毂，这条对 joint3 成立，对 joint2 不成立
+         （那边是"颊板夹毂"，两件都看得见）。 -->
+    <xacro:vz_cyl r="${w3/2+0.005}" l="0.030" z="${l3-0.015}" mat="steel"/>
+    <xacro:vz_cyl r="${w3/2+0.005}" l="0.006" z="${l3-0.003}" mat="dark_grey"/>
+    <xacro:vz_cyl r="0.004" l="${l3-0.090}" x="${-(w3/2-0.003)}" y="0" z="${l3/2}" mat="black_rubber"/>
+    <xacro:v_box  sx="0.012" sy="0.009" sz="0.009" x="${-(w3/2-0.004)}" y="0" z="0.070" mat="black_rubber"/>
+    <xacro:v_box  sx="0.012" sy="0.009" sz="0.009" x="${-(w3/2-0.004)}" y="0" z="0.130" mat="black_rubber"/>
+    <collision>
+      <origin xyz="0 0 ${l3/2}" rpy="0 0 0"/>
+      <geometry><box size="${w3} ${w3} ${l3}"/></geometry>
+    </collision>
+    <xacro:box_inertial x="${w3}" y="${w3}" z="${l3}" mass="0.45" com_z="${l3/2}"/>
+  </link>
+
+  <!-- ============================ joint4 / link4 : 腕滚 =================== -->
+  <joint name="joint4" type="revolute">
+    <parent link="link3"/>
+    <child link="link4"/>
+    <origin xyz="0 0 ${l3}" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${-pi*170/180}" upper="${pi*170/180}" velocity="4.19" effort="15.0"/>
+    <dynamics damping="0.15" friction="0.04"/>
+  </joint>
+  <link name="link4">
+    <!-- 腕滚段：中段鼓 + 两端法兰 + 两道防滑环 + 远端 4 颗螺栓。
+         滚轴关节的"真"来自**沿轴叠的盘**，不是来自圆盘侧面。 -->
+    <xacro:vz_cyl r="${r4}"          l="0.040" z="${l4/2}"      mat="steel"/>
+    <xacro:vz_cyl r="${r4+0.004}"    l="0.008" z="0.008"        mat="dark_grey"/>
+    <xacro:vz_cyl r="${r4+0.004}"    l="0.008" z="${l4-0.008}"  mat="dark_grey"/>
+    <xacro:vz_cyl r="${r4+0.0015}"   l="0.005" z="0.026"        mat="black_rubber"/>
+    <xacro:vz_cyl r="${r4+0.0015}"   l="0.005" z="0.054"        mat="black_rubber"/>
+    <xacro:v_bolt ang="${pi*0/4}" rad="${r4-0.007}" z="${l4-0.004}" r="0.0035" h="0.005"/>
+    <xacro:v_bolt ang="${pi*2/4}" rad="${r4-0.007}" z="${l4-0.004}" r="0.0035" h="0.005"/>
+    <xacro:v_bolt ang="${pi*4/4}" rad="${r4-0.007}" z="${l4-0.004}" r="0.0035" h="0.005"/>
+    <xacro:v_bolt ang="${pi*6/4}" rad="${r4-0.007}" z="${l4-0.004}" r="0.0035" h="0.005"/>
+    <collision>
+      <origin xyz="0 0 ${l4/2}" rpy="0 0 0"/>
+      <geometry><cylinder radius="${r4}" length="${l4}"/></geometry>
+    </collision>
+    <xacro:cylinder_inertial radius="${r4}" length="${l4}" mass="0.25" com_z="${l4/2}"/>
+  </link>
+
+  <!-- ============================ joint5 / link5 : 腕俯仰 ================ -->
+  <joint name="joint5" type="revolute">
+    <parent link="link4"/>
+    <child link="link5"/>
+    <origin xyz="0 0 ${l4}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="${-pi*120/180}" upper="${pi*120/180}" velocity="4.19" effort="15.0"/>
+    <dynamics damping="0.12" friction="0.03"/>
+  </joint>
+  <link name="link5">
+    <!-- 腕俯仰：小一号的"颊板夹毂"（和肩关节同一语汇，只是尺寸到腕级）+ 远端滚鼓。 -->
+    <xacro:vy_cyl r="${w5/2+0.0045}" l="0.028" z="0" mat="steel"/>
+    <xacro:v_box  sx="0.026" sy="0.008" sz="0.050" x="0" y="${ w5/2-0.0045}" z="0.025" mat="steel"/>
+    <xacro:v_box  sx="0.026" sy="0.008" sz="0.050" x="0" y="${-(w5/2-0.0045)}" z="0.025" mat="steel"/>
+    <xacro:v_box  sx="0.024" sy="0.014" sz="0.048" x="0" y="0" z="0.036" mat="aluminium"/>
+    <xacro:vy_cyl r="0.009" l="0.050" z="0" mat="dark_grey"/>
+    <xacro:vz_cyl r="${w5/2+0.0045}" l="0.016" z="${l5-0.004}" mat="steel"/>
+    <collision>
+      <origin xyz="0 0 ${l5/2}" rpy="0 0 0"/>
+      <geometry><box size="${w5} ${w5} ${l5}"/></geometry>
+    </collision>
+    <xacro:box_inertial x="${w5}" y="${w5}" z="${l5}" mass="0.18" com_z="${l5/2}"/>
+  </link>
+
+  <!-- ============================ joint6 / link6 : 腕摆 =================== -->
+  <joint name="joint6" type="revolute">
+    <parent link="link5"/>
+    <child link="link6"/>
+    <origin xyz="0 0 ${l5}" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${-pi*170/180}" upper="${pi*170/180}" velocity="4.19" effort="8.0"/>
+    <dynamics damping="0.10" friction="0.02"/>
+  </joint>
+  <link name="link6">
+    <!-- 腕摆 + 输出法兰：真机法兰上那圈螺栓是"这是机器人"最强的视觉信号，
+         所以 6 颗逐颗给角度（xacro 没有循环，但有 cos/sin）。 -->
+    <xacro:vz_cyl r="${r6}"          l="0.020" z="0.010"        mat="dark_grey"/>
+    <xacro:vz_cyl r="${r6+0.004}"    l="0.008" z="${l6-0.004}"  mat="aluminium"/>
+    <xacro:v_bolt ang="0"          rad="${r6-0.005}" z="${l6+0.001}" r="0.003" h="0.004"/>
+    <xacro:v_bolt ang="${pi/3}"     rad="${r6-0.005}" z="${l6+0.001}" r="0.003" h="0.004"/>
+    <xacro:v_bolt ang="${2*pi/3}"   rad="${r6-0.005}" z="${l6+0.001}" r="0.003" h="0.004"/>
+    <xacro:v_bolt ang="${pi}"       rad="${r6-0.005}" z="${l6+0.001}" r="0.003" h="0.004"/>
+    <xacro:v_bolt ang="${4*pi/3}"   rad="${r6-0.005}" z="${l6+0.001}" r="0.003" h="0.004"/>
+    <xacro:v_bolt ang="${5*pi/3}"   rad="${r6-0.005}" z="${l6+0.001}" r="0.003" h="0.004"/>
+    <xacro:vz_cyl r="0.008"          l="0.005" z="${l6+0.0015}"  mat="black_rubber"/>
+    <collision>
+      <origin xyz="0 0 ${l6/2}" rpy="0 0 0"/>
+      <geometry><cylinder radius="${r6}" length="${l6}"/></geometry>
+    </collision>
+    <xacro:cylinder_inertial radius="${r6}" length="${l6}" mass="0.12" com_z="${l6/2}"/>
+  </link>
+
+  <!-- ====================== 夹爪（fixed 座 + 2 个 prismatic 指） ========== -->
+  <joint name="gripper_mount" type="fixed">
+    <parent link="link6"/>
+    <child link="gripper_base"/>
+    <origin xyz="0 0 ${l6}" rpy="0 0 0"/>
+  </joint>
+  <link name="gripper_base">
+    <!-- 掌心：一块板 + 一片顶盖 + 两道指导轨。导轨伸到 collision 上方 6 mm，
+         落在两指之间的空档里（那里只有 tool0 这个纯坐标系），不影响抓取判定。 -->
+    <xacro:v_box sx="${gb_x-0.005}" sy="${gb_y-0.008}" sz="0.016" x="0" y="0" z="0.008" mat="dark_grey"/>
+    <xacro:v_box sx="0.030" sy="0.044" sz="0.005" x="0" y="0" z="0.0185" mat="steel"/>
+    <xacro:v_box sx="0.012" sy="0.006" sz="0.008" x="0" y="${ gb_y/2-0.010}" z="0.021" mat="aluminium"/>
+    <xacro:v_box sx="0.012" sy="0.006" sz="0.008" x="0" y="${-(gb_y/2-0.010)}" z="0.021" mat="aluminium"/>
+    <collision>
+      <origin xyz="0 0 ${gb_h/2}" rpy="0 0 0"/>
+      <geometry><box size="${gb_x} ${gb_y} ${gb_h}"/></geometry>
+    </collision>
+    <xacro:box_inertial x="${gb_x}" y="${gb_y}" z="${gb_h}" mass="0.10" com_z="${gb_h/2}"/>
+  </link>
+
+  <!-- 指片原点放在**指片几何中心**，所以惯量 com_z=0；开合方向用轴符号区分，
+       两个关节的 limit 都是 [0, f_stroke]，正值一律表示"张开" —— 这样
+       SRDF 的 group_state 和 JTC 的目标值读起来不会左右相反。 -->
+  <joint name="finger1_joint" type="prismatic">
+    <parent link="gripper_base"/>
+    <child link="finger1_link"/>
+    <origin xyz="0 ${gb_y/2 + f_y/2} ${gb_h + f_h/2}" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="0.0" upper="${f_stroke}" velocity="0.10" effort="20.0"/>
+    <dynamics damping="0.50" friction="0.10"/>
+  </joint>
+  <link name="finger1_link">
+    <xacro:finger_visual inner="-1"/>
+    <collision>
+      <geometry><box size="${f_x} ${f_y} ${f_h}"/></geometry>
+    </collision>
+    <xacro:box_inertial x="${f_x}" y="${f_y}" z="${f_h}" mass="0.045"/>
+  </link>
+
+  <joint name="finger2_joint" type="prismatic">
+    <parent link="gripper_base"/>
+    <child link="finger2_link"/>
+    <origin xyz="0 ${-(gb_y/2 + f_y/2)} ${gb_h + f_h/2}" rpy="0 0 0"/>
+    <axis xyz="0 -1 0"/>
+    <limit lower="0.0" upper="${f_stroke}" velocity="0.10" effort="20.0"/>
+    <dynamics damping="0.50" friction="0.10"/>
+  </joint>
+  <link name="finger2_link">
+    <xacro:finger_visual inner="1"/>
+    <collision>
+      <geometry><box size="${f_x} ${f_y} ${f_h}"/></geometry>
+    </collision>
+    <xacro:box_inertial x="${f_x}" y="${f_y}" z="${f_h}" mass="0.045"/>
+  </link>
+
+  <!-- ============ tool0：MoveIt 的规划末端（两指指尖之间的抓取中心） ======
+       为什么不直接用 link6 当 tip：抓取规划关心的是"夹取点"在哪，
+       把 tool0 定在指尖平面上，set_pose_target 给的目标就是物体要到的位置，
+       不需要在业务代码里再补一个 75 mm 的偏置 —— 这类偏置是现场 bug 的高发区。 -->
+  <joint name="tool0_joint" type="fixed">
+    <parent link="gripper_base"/>
+    <child link="tool0"/>
+    <origin xyz="0 0 ${gb_h + f_h}" rpy="0 0 0"/>
+  </joint>
+  <link name="tool0">
+    <visual>
+      <geometry><sphere radius="0.004"/></geometry>
+      <material name="tip_red"/>
+    </visual>
+    <!-- tool0 是纯坐标系，故意不给 collision：给了就会在 SRDF 里多出一堆
+         "小球与指片相碰"的假阳性，还得逐条 disable。 -->
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.001"/>
+      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
+    </inertial>
+  </link>
+
+  <!-- ros2_control 声明：8 个可控关节（6 臂 + 2 指），mock 硬件 -->
+  <xacro:arm6_ros2_control/>
+
+</robot>

@@ -1,0 +1,14 @@
+# =============================================================================
+#  sensors_3d.yaml —— 3D 感知（本工程关闭）
+#
+#  为什么留一个空文件而不是删掉：
+#    MoveItConfigsBuilder.sensors_3d() 会去找 config/sensors_3d.yaml；
+#    文件不存在时它静默跳过，存在但 sensors 列表为空时同样跳过 —— 两种都能跑，
+#    但"存在且为空"表达了**明确的设计决定**（本项目是纯运动规划验证，
+#    没有相机/点云，因此不建八叉树地图），而不是"作者忘了配"。
+#
+#  要接相机时：把 sensors 列表填上，并新增 sensors_xxx.yaml 描述
+#    occupancy_map_monitor/DepthImageOctomapUpdater 或 PointCloudOctomapUpdater，
+#    再把 planning_scene_monitor 的 publish_geometry_updates 保持 true 即可。
+# =============================================================================
+sensors: []

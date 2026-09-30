@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<!--
+  ============================================================================
+   inertial_macros.xacro —— 规则几何体的解析式惯量宏
+  ============================================================================
+  为什么单独一个文件：
+    URDF 里每个 link 都必须带 <inertial>，否则 MoveIt 的碰撞检测/质心计算会报
+    "link has no inertial"，而 robot_state_publisher 干脆不发该 link 的 TF。
+    6 自由度 + 2 手指 = 8 个运动 link，如果每个都手抄一遍 3x3 惯量矩阵，
+    改一次尺寸就要改 8 处 —— 宏是唯一能同时保证"正确 + 可维护"的写法。
+
+  公式（刚体、均匀密度、绕质心、主轴对齐几何体自身坐标系）：
+    长方体  Ixx = m/12 (y^2 + z^2)   Iyy = m/12 (x^2 + z^2)   Izz = m/12 (x^2 + y^2)
+    圆柱体(轴 = 自身 z)  Ixx = Iyy = m(3r^2 + L^2)/12        Izz = m r^2 / 2
+    球        I = 2/5 m r^2
+
+  一个常被忽略的点：URDF 的 <inertia> 定义在 **link 自身坐标系**下，且
+  <inertial><origin> 描述的是"质心相对 link 原点"的位置。本文件里所有宏都把
+  质心放在几何体中心（origin xyz=0 0 0），因此主 xacro 里各 link 的几何 origin
+  必须与 link 原点重合 —— 也就是"link 原点 = 几何中心"。肩关节那种
+  "原点在关节、几何体向 +z 伸出去"的情况，就在主 xacro 里给 <origin xyz="0 0 L/2">
+  的视觉/碰撞体，而惯量宏仍然按几何中心写 —— 为此宏额外接受一个 com_z 参数，
+  并用平行轴定理把 I 从质心平移到 link 原点。
+  ============================================================================
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="inertial_macros">
+
+  <!-- 长方体：边长 x,y,z，质量 mass，质心在 link 原点上方 com_z 处 -->
+  <xacro:macro name="box_inertial" params="x y z mass com_z:=0.0">
+    <inertial>
+      <origin xyz="0.0 0.0 ${com_z}" rpy="0 0 0"/>
+      <mass value="${mass}"/>
+      <!-- 平行轴定理：I_origin = I_com + m*d^2，d 只在 z 方向，
+           所以 Ixx/Iyy 各加 m*d^2，Izz 不变（d 与 z 轴平行）。 -->
+      <inertia ixx="${mass/12.0*(y*y + z*z) + mass*com_z*com_z}" ixy="0.0" ixz="0.0"
+               iyy="${mass/12.0*(x*x + z*z) + mass*com_z*com_z}" iyz="0.0"
+               izz="${mass/12.0*(x*x + y*y)}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- 圆柱体：轴沿 link 自身 z 轴，几何中心在 com_z -->
+  <xacro:macro name="cylinder_inertial" params="radius length mass com_z:=0.0">
+    <inertial>
+      <origin xyz="0.0 0.0 ${com_z}" rpy="0 0 0"/>
+      <mass value="${mass}"/>
+      <inertia ixx="${mass*(3.0*radius*radius + length*length)/12.0 + mass*com_z*com_z}" ixy="0.0" ixz="0.0"
+               iyy="${mass*(3.0*radius*radius + length*length)/12.0 + mass*com_z*com_z}" iyz="0.0"
+               izz="${mass*radius*radius/2.0}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- 球：只用于末端示教点/工具法兰的配重近似 -->
+  <xacro:macro name="sphere_inertial" params="radius mass com_z:=0.0">
+    <inertial>
+      <origin xyz="0.0 0.0 ${com_z}" rpy="0 0 0"/>
+      <mass value="${mass}"/>
+      <inertia ixx="${0.4*mass*radius*radius + mass*com_z*com_z}" ixy="0.0" ixz="0.0"
+               iyy="${0.4*mass*radius*radius + mass*com_z*com_z}" iyz="0.0"
+               izz="${0.4*mass*radius*radius}"/>
+    </inertial>
+  </xacro:macro>
+
+</robot>

@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ============================================================================
+   arm6.srdf —— Semantic Robot Description Format（语义描述）
+  ============================================================================
+   URDF 说"机器人长什么样"，SRDF 说"怎么规划它"。这里每一项都对应规划行为：
+
+   1) group "arm"：base_link → tool0 的运动链。规划组是 MoveIt 的基本单位，
+      set_start_state / set_pose_target / 组级 IK 全部按组生效。
+      tip 选 tool0（指尖抓取中心）而不是 link6，理由见 URDF 里的注释。
+   2) group "gripper"：两个 prismatic 指关节。单独成组才能被
+      set_named_target_state("open"/"closed") 一句话控制，也才能声明成
+      end_effector 挂到 arm 上（rviz 插件因此会给出"抓取"面板）。
+   3) group_state：命名位形。demo 节点里"回 Home"用的就是它 ——
+      把角度常量收进 SRDF，业务代码里不出现任何 magic number。
+   4) DISABLED COLLISIONS：本节由 `bash scripts/update_collisions.sh 10000000`
+      用 MoveIt 官方 collisions_updater 计算得到，**不是手工勾的**。
+      收敛证据（同一份 URDF，只改采样次数）：
+
+        trials      被豁免的对数   相对上一次的差异
+        20 000      38             —
+        200 000     37             -link1/link5（这次采到了碰撞）
+        1 000 000   36             -link1/link4（又采到一次）
+        10 000 000  36             与 1M 逐对一致  -> 判定收敛
+
+      也就是说 2 万次采样会把"其实会碰"的关节对误判成"永不相碰"，
+      后果是规划器允许一条实际会自撞的路径，而仿真里看不出问题。
+      本工程取收敛后的 36 对（23 Never + 9 Adjacent + 4 tool0 无几何）。
+      参与碰撞检查的还剩多少对 —— 算法：URDF 里带 <collision> 的 link 有 10 个
+      （tool0 只有 visual，world 无几何），两两组合 45 对；36 条豁免里有 32 条
+      命中这 45 对（另外 4 条是 tool0 的，属于"写了也不起作用"的说明性条目），
+      所以真正仍在检查的是 45 - 32 = **13 对**：
+        base_link <-> link4, link5, link6, gripper_base, finger1_link, finger2_link
+        link1     <-> link4, link5, link6, gripper_base, finger1_link, finger2_link
+        link4     <-> link6
+      前两组就是"满伸展时大臂/小臂压向基座方向"的真实风险项，extended 点位专门走这里。
+
+      世界坐标系不在这里声明：URDF 里已有无惯量的 dummy 根 link `world`
+      （KDL 不允许根 link 带惯量，见 arm6.urdf.xacro 的注释），
+      world -> base_link 由 robot_state_publisher 直接发布。
+      若在此再写 <virtual_joint parent_frame="world" child_link="base_link"/>，
+      同一个帧就有两个发布者，TF 会报 multiple parent publishers。
+  ============================================================================
+-->
+<robot name="arm6">
+
+  <!-- ======================= 规划组 ======================= -->
+  <group name="arm">
+    <chain base_link="base_link" tip_link="tool0"/>
+  </group>
+
+  <group name="gripper">
+    <link name="finger1_link"/>
+    <link name="finger2_link"/>
+    <link name="gripper_base"/>
+    <joint name="finger1_joint"/>
+    <joint name="finger2_joint"/>
+  </group>
+
+  <!-- 末端执行器声明：parent_link 必须在 arm 组里。它不新增自由度，
+       只是告诉 MoveIt/rviz "gripper 组挂在 arm 的末端"，
+       于是抓取时能自动把夹爪的碰撞体纳入 arm 的规划场景。 -->
+  <end_effector name="gripper" parent_link="tool0" group="gripper" parent_group="arm"/>
+
+  <!-- ======================= 命名位形 =======================
+       数值必须落在 URDF 的 <limit> 内，否则 SRDF 解析不报错、
+       但 MoveGroupInterface::setNamedTarget 会在规划时才失败。 -->
+  <group_state name="up" group="arm">
+    <joint name="joint1" value="0"/>
+    <joint name="joint2" value="0"/>
+    <joint name="joint3" value="0"/>
+    <joint name="joint4" value="0"/>
+    <joint name="joint5" value="0"/>
+    <joint name="joint6" value="0"/>
+  </group_state>
+
+  <!-- home：收臂待命位形。肩 -34°、肘 +63°、腕俯仰 -29°，
+       整臂重心靠近基座，是"上电后先回这里"的常用姿态。 -->
+  <group_state name="home" group="arm">
+    <joint name="joint1" value="0"/>
+    <joint name="joint2" value="-0.60"/>
+    <joint name="joint3" value="1.10"/>
+    <joint name="joint4" value="0"/>
+    <joint name="joint5" value="-0.50"/>
+    <joint name="joint6" value="0"/>
+  </group_state>
+
+  <!-- extended：肩 +90°，整臂沿基座 +x 水平伸直（最大前伸位形）。
+       用来验证工作空间边界：0.24+0.20+0.08+0.06+0.03+0.02+0.075 = 0.705 m。 -->
+  <group_state name="extended" group="arm">
+    <joint name="joint1" value="0"/>
+    <joint name="joint2" value="1.5708"/>
+    <joint name="joint3" value="0"/>
+    <joint name="joint4" value="0"/>
+    <joint name="joint5" value="0"/>
+    <joint name="joint6" value="0"/>
+  </group_state>
+
+  <group_state name="open" group="gripper">
+    <joint name="finger1_joint" value="0.040"/>
+    <joint name="finger2_joint" value="0.040"/>
+  </group_state>
+  <group_state name="closed" group="gripper">
+    <joint name="finger1_joint" value="0.0"/>
+    <joint name="finger2_joint" value="0.0"/>
+  </group_state>
+
+  <!-- ============ 允许相碰的 link 对（collisions_updater, 1e7 trials） ===== -->
+  <disable_collisions link1="base_link" link2="link1" reason="Adjacent"/>
+  <disable_collisions link1="base_link" link2="link2" reason="Never"/>
+  <disable_collisions link1="base_link" link2="link3" reason="Never"/>
+  <disable_collisions link1="finger1_link" link2="finger2_link" reason="Never"/>
+  <disable_collisions link1="finger1_link" link2="gripper_base" reason="Adjacent"/>
+  <disable_collisions link1="finger1_link" link2="link2" reason="Never"/>
+  <disable_collisions link1="finger1_link" link2="link3" reason="Never"/>
+  <disable_collisions link1="finger1_link" link2="link4" reason="Never"/>
+  <disable_collisions link1="finger1_link" link2="link5" reason="Never"/>
+  <disable_collisions link1="finger1_link" link2="link6" reason="Never"/>
+  <disable_collisions link1="finger1_link" link2="tool0" reason="tool0 has no geometry"/>
+  <disable_collisions link1="finger2_link" link2="gripper_base" reason="Adjacent"/>
+  <disable_collisions link1="finger2_link" link2="link2" reason="Never"/>
+  <disable_collisions link1="finger2_link" link2="link3" reason="Never"/>
+  <disable_collisions link1="finger2_link" link2="link4" reason="Never"/>
+  <disable_collisions link1="finger2_link" link2="link5" reason="Never"/>
+  <disable_collisions link1="finger2_link" link2="link6" reason="Never"/>
+  <disable_collisions link1="finger2_link" link2="tool0" reason="tool0 has no geometry"/>
+  <disable_collisions link1="gripper_base" link2="link2" reason="Never"/>
+  <disable_collisions link1="gripper_base" link2="link3" reason="Never"/>
+  <disable_collisions link1="gripper_base" link2="link4" reason="Never"/>
+  <disable_collisions link1="gripper_base" link2="link5" reason="Never"/>
+  <disable_collisions link1="gripper_base" link2="link6" reason="Adjacent"/>
+  <disable_collisions link1="gripper_base" link2="tool0" reason="tool0 has no geometry"/>
+  <disable_collisions link1="link1" link2="link2" reason="Adjacent"/>
+  <disable_collisions link1="link1" link2="link3" reason="Never"/>
+  <disable_collisions link1="link2" link2="link3" reason="Adjacent"/>
+  <disable_collisions link1="link2" link2="link4" reason="Never"/>
+  <disable_collisions link1="link2" link2="link5" reason="Never"/>
+  <disable_collisions link1="link2" link2="link6" reason="Never"/>
+  <disable_collisions link1="link3" link2="link4" reason="Adjacent"/>
+  <disable_collisions link1="link3" link2="link5" reason="Never"/>
+  <disable_collisions link1="link3" link2="link6" reason="Never"/>
+  <disable_collisions link1="link4" link2="link5" reason="Adjacent"/>
+  <disable_collisions link1="link5" link2="link6" reason="Adjacent"/>
+  <disable_collisions link1="link6" link2="tool0" reason="tool0 has no geometry"/>
+
+</robot>

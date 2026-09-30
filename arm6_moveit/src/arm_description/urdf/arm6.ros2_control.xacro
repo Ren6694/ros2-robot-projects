@@ -1,0 +1,112 @@
+<?xml version="1.0"?>
+<!--
+  ============================================================================
+   arm6.ros2_control.xacro —— ros2_control 硬件接口声明（mock 硬件）
+  ============================================================================
+   这段 <ros2_control> 不是"模型"，而是一份**接口契约**：
+     controller_manager 读它 -> 加载 <hardware><plugin> -> 按 <joint> 列表
+     注册 command/state interface -> 控制器（JTC、state broadcaster）只认接口名。
+   因此同一份 URDF 把 plugin 从 mock_components/GenericSystem 换成
+   实机驱动（如 ros2_control 的串口/CAN 硬件），上层的 MoveIt + JTC 一行都不用改。
+   这正是本项目"仿真到真机可平移"的落点，也是简历里那句
+   "基于 ros2_control 接口抽象，仿真与真机共用同一套控制栈"的技术依据。
+
+   为什么用 mock_components/GenericSystem 而不是 Gazebo：
+     本项目的验证目标是 **MoveIt2 的建模、规划、执行链路与日志**，不是动力学与
+     接触仿真。mock 硬件把"指令 = 状态"这条闭环做成一阶理想跟随，
+     启动 < 1 s、不占 GPU、结果确定可回归；Gazebo 会引入物理参数调参这一层
+     与课题无关的噪声。需要动力学时只改 plugin 即可，接口不变。
+
+   每个关节都声明 velocity 状态接口：JTC 的 open_loop 控制与
+   MoveIt 的 trajectory execution monitoring 都要读速度；缺了它
+   JTC 会在 activate 阶段报 "not found in the provided state interfaces"。
+  ============================================================================
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="arm6_ros2_control">
+
+  <xacro:macro name="arm6_ros2_control">
+
+    <ros2_control name="arm6_mock_system" type="system">
+      <hardware>
+        <plugin>mock_components/GenericSystem</plugin>
+        <!-- 关掉"命令传感器"通道：本项目没有力/扭矩传感，避免 controller_manager
+             为不存在的 sensor 接口分配状态位。 -->
+        <param name="mock_sensor_commands">false</param>
+        <!-- 0 偏置：仿真里不做"故意偏离指令"的故障注入，回归数字才可比。 -->
+        <param name="state_following_offset">0.0</param>
+      </hardware>
+
+      <!-- 6 个臂关节：位置指令接口（JTC 的 position 模式） -->
+      <joint name="joint1">
+        <command_interface name="position">
+          <param name="min">${-pi*160/180}</param>
+          <param name="max">${ pi*160/180}</param>
+        </command_interface>
+        <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="joint2">
+        <command_interface name="position">
+          <param name="min">${-pi*100/180}</param>
+          <param name="max">${ pi*100/180}</param>
+        </command_interface>
+        <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="joint3">
+        <command_interface name="position">
+          <param name="min">${-pi*120/180}</param>
+          <param name="max">${ pi*120/180}</param>
+        </command_interface>
+        <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="joint4">
+        <command_interface name="position">
+          <param name="min">${-pi*170/180}</param>
+          <param name="max">${ pi*170/180}</param>
+        </command_interface>
+        <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="joint5">
+        <command_interface name="position">
+          <param name="min">${-pi*120/180}</param>
+          <param name="max">${ pi*120/180}</param>
+        </command_interface>
+        <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="joint6">
+        <command_interface name="position">
+          <param name="min">${-pi*170/180}</param>
+          <param name="max">${ pi*170/180}</param>
+        </command_interface>
+        <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <!-- 2 个指关节：单位是米（prismatic），限位与 URDF 的 [0, 0.040] 对齐。
+           注意这里必须与 URDF <limit> 一致，否则 JTC 会按 ros2_control 的
+           接口限位裁剪，而 MoveIt 按 URDF 限位规划 —— 两者不一致时表现为
+           "规划成功但执行不到位"，很难查。 -->
+      <joint name="finger1_joint">
+        <command_interface name="position">
+          <param name="min">0.0</param>
+          <param name="max">0.040</param>
+        </command_interface>
+        <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="finger2_joint">
+        <command_interface name="position">
+          <param name="min">0.0</param>
+          <param name="max">0.040</param>
+        </command_interface>
+        <state_interface name="position"><param name="initial_value">0.0</param></state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+    </ros2_control>
+
+  </xacro:macro>
+</robot>
