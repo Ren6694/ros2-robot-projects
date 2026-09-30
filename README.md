@@ -79,7 +79,7 @@ ros2-robot-projects/
 │   └── docs/assets/            #   演示 GIF（导航实录）+ TF 树图
 ├── arm6_moveit/                # 项目三：六轴机械臂 MoveIt2 闭环
 │   ├── src/{arm_description,arm_moveit_config,arm_demo}
-│   ├── scripts/                #   13 个带 *-RESULT 的验收/诊断脚本
+│   ├── scripts/                #   25 个脚本（14 个带 *-RESULT）
 │   ├── docs/                   #   8 篇工程笔记（含一次真实撤回）
 │   ├── artifacts/              #   运动曲线图 + RViz 三判据截图 + 改造前 collision 基线
 │   └── arm6-viewer.html        #   零依赖浏览器 3D 预览（零件清单由 URDF 生成）

@@ -1,7 +1,7 @@
 # arm6 —— 6 轴机械臂 + 二指夹爪的 MoveIt2 闭环
 
 > 手写 URDF/xacro → SRDF 碰撞矩阵算到收敛 → `ros2_control` + JTC → 自研点位节点直连 `MoveGroup`
-> → 逐点位运动日志 → 曲线图与 RViz 三张截图证据。**13 个脚本各自带机器可读结论行，退出码即验收结论。**
+> → 逐点位运动日志 → 曲线图与 RViz 三张截图证据。**14 个脚本各自带机器可读结论行，退出码即验收结论。**
 
 一圈"抓取-放置"节拍跑完：**9/9 点位规划成功、9/9 执行成功、到位误差 `max_arr_err = 1.0e-4 rad`**
 （只有容差的 3%），11 个关节的轨迹总长 11.43 rad。
@@ -48,7 +48,7 @@ arm6_moveit/
 ├── src/arm_description/     # URDF/xacro：几何、惯量宏、ros2_control 接口契约
 ├── src/arm_moveit_config/   # SRDF / 关节限位 / 运动学 / 控制器 / launch
 ├── src/arm_demo/            # waypoint_mover 节点 + 点位表 + 运动日志(JSONL)
-├── scripts/                 # 13 个带结果行的验收/诊断脚本 + 3 个判据自测
+├── scripts/                 # 25 个脚本，其中 14 个带结果行；判据自测 2 个入口
 ├── docs/                    # 8 篇：环境 → 构建 → URDF → MoveIt → 控制 → 可视化 → 排错 → 虚拟机对照
 └── artifacts/               # 展开后的 URDF/SRDF 存档、运动曲线图、RViz 截图、改造前基线
 ```
